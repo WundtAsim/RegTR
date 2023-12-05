@@ -2,6 +2,7 @@ import torch
 
 import data_loaders.transforms
 import data_loaders.modelnet as modelnet
+import data_loaders.CustomData as CustomData
 from data_loaders.collate_functions import collate_pair
 from data_loaders.threedmatch import ThreeDMatchDataset
 
@@ -37,6 +38,14 @@ def get_dataloader(cfg, phase, num_workers=0):
             dataset = modelnet.get_train_datasets(cfg)[1]
         elif phase == 'test':
             dataset = modelnet.get_test_datasets(cfg)
+
+    elif cfg.dataset == 'CustomData':
+        if phase == 'train':
+            dataset = CustomData.get_train_datasets(cfg)[0]
+        elif phase == 'val':
+            dataset = CustomData.get_train_datasets(cfg)[1]
+        elif phase == 'test':
+            dataset = CustomData.get_test_datasets(cfg)
 
     else:
         raise AssertionError('Invalid dataset')

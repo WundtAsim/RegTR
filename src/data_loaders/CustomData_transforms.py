@@ -3,17 +3,17 @@ groundtruth overlap
 """
 
 import math
-from typing import Dict, List
+from typing import Any, Dict, List
 
 import numpy as np
 from scipy.spatial.transform import Rotation
 from scipy.stats import special_ortho_group
 import torch
 import torch.utils.data
+import open3d as o3d
 
 from utils.se3_numpy import se3_transform, se3_inv
 from utils.so3_numpy import so3_transform
-
 
 def uniform_2_sphere(num: int = None):
     """Uniform sampling on a 2-sphere
@@ -438,3 +438,53 @@ class Dict2PointnetLKList:
             transform_gt_4x4 = np.concatenate([sample['transform_gt'],
                                                np.array([[0.0, 0.0, 0.0, 1.0]], dtype=np.float32)], axis=0)
             return sample['points_src'][:, :3], sample['points_ref'][:, :3], transform_gt_4x4
+
+
+# my transforms----------------------------
+class ReadPcd:
+    """read pcd from .pcd"""
+    def __call__(self, sample: Dict):
+        sample['src_pcd'] = o3d.io.read_point_cloud(sample['src_pcd']).points
+        sample['src_pcd'] = np.asarray(sample['src_pcd']).astype(np.float32)
+        sample['tar_pcd'] = o3d.io.read_point_cloud(sample['tar_pcd']).points
+        sample['tar_pcd'] = np.asarray(sample['tar_pcd']).astype(np.float32)
+
+        n_points = sample['src_pcd'].shape[0]
+        sample['correspondences'] = np.tile(np.arange(n_points), (2, 1))
+
+        return sample
+class RandomTransform(RandomTransformSE3_euler):
+    def __call__(self, sample:Dict):
+        src_transformed, transform_r_s, _ = self.transform(sample['src_pcd'])
+        sample['transform_gt'] = transform_r_s  # Apply to source to get reference
+        sample['src_raw'] = sample.pop('src_pcd')
+        sample['src_pcd'] = src_transformed
+        return sample
+class Coorespondence_getter():
+    def __init__(self):
+        self.search_radius = 5
+        self.K = 1 # one nearest point
+    def __call__(self, sample:Dict):
+        transf = np.vstack((sample['transform_gt'], np.array([0,0,0,1]))).astype(np.float32)
+        src_ply = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(sample['src_pcd']))
+        tgt_ply = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(sample['tar_pcd']))
+        src_ply.transform(transf)
+        pcd_tree = o3d.geometry.KDTreeFlann(tgt_ply)
+        src_npy = np.array(src_ply.points)
+        corrs = []
+        for i in range(src_npy.shape[0]):
+            point = src_npy[i]
+            [k, idx, _] = pcd_tree.search_radius_vector_3d(point, self.search_radius)
+            if self.K is not None:
+                idx = idx[:self.K]
+            for j in idx:
+                corrs.append([i, j])
+        sample['correspondences'] = np.array(corrs).T
+        src_overlap = np.zeros(sample['src_pcd'].shape[0], dtype=bool)
+        tar_overlap = np.zeros(sample['tar_pcd'].shape[0], dtype=bool)
+        src_overlap[sample['correspondences'][0]] = 1
+        tar_overlap[sample['correspondences'][1]] = 1
+        sample['ref_overlap'] = src_overlap
+        sample['src_overlap'] = tar_overlap
+        return sample
+# ----------------------------------------------
