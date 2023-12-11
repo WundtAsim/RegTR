@@ -47,9 +47,13 @@ _examples = [
      '../data/modelnet_demo_data/modelnet_test_630_0.ply',
      '../data/modelnet_demo_data/modelnet_test_630_1.ply'),
     # 5 use modelnet to test custom data
-    ('../trained_models/3dmatch/ckpt/model-best.pth',
+    ('../trained_models/modelnet/ckpt/model-best.pth',
      '/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/val_data/src/src_89_left_0.ply',
      '/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/val_data/tar/tar_89_left_0.ply'),
+     # 6 use modelnet to test custom data--5mm-voxel
+    ('../trained_models/modelnet/ckpt/model-best.pth',
+     '../data/custom_demo/src.ply',
+     '../data/custom_demo/ref.ply'),
 ]
 
 parser = argparse.ArgumentParser()

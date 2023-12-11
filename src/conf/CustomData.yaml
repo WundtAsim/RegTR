@@ -3,11 +3,11 @@ general:
 
 dataset:
     dataset: CustomData
-    root: /home/yangqi/Documents/DeepLearning/dataset/CustomData
+    root: /media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val
     perturb_pose: small
-    train_batch_size: 1
-    val_batch_size: 1
-    test_batch_size: 1
+    train_batch_size: 4
+    val_batch_size: 4
+    test_batch_size: 4
     num_points: 1024
     noise_type: custom
     rot_mag: 45.0
