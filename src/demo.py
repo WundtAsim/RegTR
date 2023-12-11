@@ -46,6 +46,10 @@ _examples = [
     ('../trained_models/modelnet/ckpt/model-best.pth',
      '../data/modelnet_demo_data/modelnet_test_630_0.ply',
      '../data/modelnet_demo_data/modelnet_test_630_1.ply'),
+    # 5 use modelnet to test custom data
+    ('../trained_models/3dmatch/ckpt/model-best.pth',
+     '/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/val_data/src/src_89_left_0.ply',
+     '/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/val_data/tar/tar_89_left_0.ply'),
 ]
 
 parser = argparse.ArgumentParser()
@@ -137,11 +141,13 @@ def visualize_result(src_xyz: np.ndarray, tgt_xyz: np.ndarray,
     vis.start()
 
 
-def load_point_cloud(fname):
+def load_point_cloud(fname, tran = False):
     if fname.endswith('.pth'):
         data = torch.load(fname)
     elif fname.endswith('.ply'):
         pcd = o3d.io.read_point_cloud(fname)
+        if tran:
+            pcd = pcd.transform(generate_transform())
         data = np.asarray(pcd.points)
     elif fname.endswith('.bin'):
         data = np.fromfile(fname, dtype=np.float32).reshape(-1, 4)
@@ -150,6 +156,37 @@ def load_point_cloud(fname):
 
     return data[:, :3]  # ignore reflectance, or other features if any
 
+def generate_transform():
+
+    rot_mag = 45
+    trans_mag = 0.5
+
+    # Generate rotation
+    anglex = np.random.uniform() * np.pi * rot_mag / 180.0
+    angley = np.random.uniform() * np.pi * rot_mag / 180.0
+    anglez = np.random.uniform() * np.pi * rot_mag / 180.0
+
+    cosx = np.cos(anglex)
+    cosy = np.cos(angley)
+    cosz = np.cos(anglez)
+    sinx = np.sin(anglex)
+    siny = np.sin(angley)
+    sinz = np.sin(anglez)
+    Rx = np.array([[1, 0, 0],
+                    [0, cosx, -sinx],
+                    [0, sinx, cosx]])
+    Ry = np.array([[cosy, 0, siny],
+                    [0, 1, 0],
+                    [-siny, 0, cosy]])
+    Rz = np.array([[cosz, -sinz, 0],
+                    [sinz, cosz, 0],
+                    [0, 0, 1]])
+    R_ab = Rx @ Ry @ Rz
+    t_ab = np.random.uniform(-trans_mag, trans_mag, 3)
+
+    rand_SE3 = np.concatenate((R_ab, t_ab[:, None]), axis=1).astype(np.float32)
+    rand_SE3 = np.vstack((rand_SE3,np.array([0,0,0,1])))
+    return rand_SE3
 
 def main():
     # Retrieves the model and point cloud paths
@@ -165,8 +202,9 @@ def main():
     model.load_state_dict(state['state_dict'])
 
     # Loads point cloud data: Each is represented as a Nx3 numpy array
-    src_xyz = load_point_cloud(src_path)
+    src_xyz = load_point_cloud(src_path, True)
     tgt_xyz = load_point_cloud(tgt_path)
+    src_xyz
 
     if 'crop_radius' in cfg:
         # Crops the point cloud if necessary (set in the config file)
