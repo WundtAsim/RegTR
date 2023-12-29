@@ -151,8 +151,8 @@ class GenericRegModel(GenericModel, ABC):
                 pred['pose'][-1]
             )
 
-        else:
-            raise NotImplementedError
+        # else:
+        #     raise NotImplementedError
 
         test_outputs = (losses, metrics)
         return test_outputs

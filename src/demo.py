@@ -23,6 +23,7 @@ from models.regtr import RegTR
 from utils.misc import load_config
 from utils.se3_numpy import se3_transform
 
+num = 13
 _examples = [
     # 3DMatch examples
     # 0
@@ -46,14 +47,14 @@ _examples = [
     ('../trained_models/modelnet/ckpt/model-best.pth',
      '../data/modelnet_demo_data/modelnet_test_630_0.ply',
      '../data/modelnet_demo_data/modelnet_test_630_1.ply'),
-    # 5 use modelnet to test custom data
-    ('../trained_models/modelnet/ckpt/model-best.pth',
-     '/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/val_data/src/src_89_left_0.ply',
-     '/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/val_data/tar/tar_89_left_0.ply'),
-     # 6 use modelnet to test custom data--5mm-voxel
-    ('../trained_models/modelnet/ckpt/model-best.pth',
-     '../data/custom_demo/src.ply',
-     '../data/custom_demo/ref.ply'),
+    # 5 use custom model to test custom data
+    ('../logs/CustomData/231222/ckpt/model-756864.pth',
+     f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/val_data/src/src_91_left_{num}.pcd',
+     f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/val_data/tar/tar_91_left_{num}.pcd'),
+     # 6 use custom to test custom data--5mm-voxel
+    ('../logs/CustomData/231222/ckpt/model-65664.pth',
+     '/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/val_data/src/src_92_left_3.pcd',
+     '/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/val_data/tar/tar_92_left_3.pcd'),
 ]
 
 parser = argparse.ArgumentParser()
@@ -145,13 +146,13 @@ def visualize_result(src_xyz: np.ndarray, tgt_xyz: np.ndarray,
     vis.start()
 
 
-def load_point_cloud(fname, tran = False):
+def load_point_cloud(fname, tran, transformation):
     if fname.endswith('.pth'):
         data = torch.load(fname)
-    elif fname.endswith('.ply'):
+    elif fname.endswith('.ply') or fname.endswith('.pcd'):
         pcd = o3d.io.read_point_cloud(fname)
         if tran:
-            pcd = pcd.transform(generate_transform())
+            pcd = pcd.transform(transformation)
         data = np.asarray(pcd.points)
     elif fname.endswith('.bin'):
         data = np.fromfile(fname, dtype=np.float32).reshape(-1, 4)
@@ -190,7 +191,51 @@ def generate_transform():
 
     rand_SE3 = np.concatenate((R_ab, t_ab[:, None]), axis=1).astype(np.float32)
     rand_SE3 = np.vstack((rand_SE3,np.array([0,0,0,1])))
+    print("随机矩阵\n", np.linalg.inv(rand_SE3))
     return rand_SE3
+
+def compute_relative_errors(T_true, T_est):
+    # 提取真实旋转矩阵和估计的旋转矩阵
+    R_true = T_true[:3, :3]
+    R_est = T_est[:3, :3]
+
+    # 计算相对旋转误差
+    trace = np.trace(np.dot(R_true.T, R_est))
+    rotation_error = np.arccos((trace - 1.0) / 2.0) * 180/np.pi
+
+    # 提取真实平移向量和估计的平移向量
+    t_true = T_true[:3, 3]
+    t_est = T_est[:3, 3]
+
+    # 计算相对平移误差
+    translation_error = np.linalg.norm(t_true - t_est)
+
+    return rotation_error, translation_error
+
+def compute_chamfer_distance(pcd1, pcd2):
+    # 计算点云1到点云2的距离
+    dist1 = np.min(np.sqrt(np.sum((pcd1[:, None] - pcd2) ** 2, axis=-1)), axis=1).sum()
+
+    # 计算点云2到点云1的距离
+    dist2 = np.min(np.sqrt(np.sum((pcd2[:, None] - pcd1) ** 2, axis=-1)), axis=1).sum()
+
+    # 计算倒角距离，即两个方向的距离之和
+    chamfer_distance = dist1 + dist2
+    chamfer_distance/=pcd1.shape[0]
+
+    return chamfer_distance
+
+def transform_point_cloud(point_cloud, transformation_matrix):
+    # 将点云转换为齐次坐标形式（添加一列1）
+    homogeneous_points = np.hstack((point_cloud, np.ones((point_cloud.shape[0], 1))))
+
+    # 将位姿转换矩阵应用于点云
+    transformed_points = np.dot(transformation_matrix, homogeneous_points.T).T
+
+    # 将变换后的点云转换为非齐次坐标形式（去除最后一列）
+    transformed_points = transformed_points[:, :3]
+
+    return transformed_points
 
 def main():
     # Retrieves the model and point cloud paths
@@ -206,8 +251,9 @@ def main():
     model.load_state_dict(state['state_dict'])
 
     # Loads point cloud data: Each is represented as a Nx3 numpy array
-    src_xyz = load_point_cloud(src_path, True)
-    tgt_xyz = load_point_cloud(tgt_path)
+    init_tran = generate_transform()
+    src_xyz = load_point_cloud(src_path, True, init_tran)
+    tgt_xyz = load_point_cloud(tgt_path, False, None)
     src_xyz
 
     if 'crop_radius' in cfg:
@@ -229,6 +275,17 @@ def main():
     src_kp = to_numpy(outputs['src_kp'][b])
     src2tgt = to_numpy(outputs['src_kp_warped'][b][-1])  # pred. corresponding locations of src_kp
     overlap_score = to_numpy(torch.sigmoid(outputs['src_overlap'][b][-1]))
+
+    # 打印
+    pose_ = np.vstack((pose,np.array([0,0,0,1])))
+    print("pose",pose_)
+    # 计算相对旋转误差和相对平移误差
+    rotation_error, translation_error = compute_relative_errors(np.linalg.inv(init_tran), pose_)
+    print("相对旋转误差（RRE）:", rotation_error, "度")
+    print("相对平移误差（TRE）:", translation_error, "m")
+    # 计算倒角距离
+    chamfer_distance = compute_chamfer_distance(transform_point_cloud(src_xyz,pose_), tgt_xyz)
+    print("倒角距离:", chamfer_distance)
 
     visualize_result(src_xyz, tgt_xyz, src_kp, src2tgt, overlap_score, pose,
                      threshold=opt.threshold)
