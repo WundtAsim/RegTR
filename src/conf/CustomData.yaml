@@ -4,11 +4,9 @@ general:
 dataset:
     dataset: CustomData
     root: /media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val
-    perturb_pose: small
     train_batch_size: 4
     val_batch_size: 4
     test_batch_size: 4
-    num_points: 1024
     noise_type: custom
     rot_mag: 45.0
     trans_mag: 0.5
@@ -22,7 +20,7 @@ solver:
     weight_decay: 0.0001
     grad_clip: 0.1
     scheduler: 'step'
-    scheduler_param: [127800, 0.5]  # Decay by 0.5 every 100 epochs
+    scheduler_param: [34560, 0.5]  # Decay by 0.5 every 20 epochs
 
 
 # Use a shallower backbone to maintain resolution
@@ -53,7 +51,7 @@ kpconv_options:
 
 
 model:
-    model: regtr.RegTR
+    model: regtr.RegTR100
 
     # Transformer
     attention_type: dot_prod

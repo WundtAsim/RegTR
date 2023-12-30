@@ -15,237 +15,6 @@ import open3d as o3d
 from utils.se3_numpy import se3_transform, se3_inv
 from utils.so3_numpy import so3_transform
 
-def uniform_2_sphere(num: int = None):
-    """Uniform sampling on a 2-sphere
-
-    Source: https://gist.github.com/andrewbolster/10274979
-
-    Args:
-        num: Number of vectors to sample (or None if single)
-
-    Returns:
-        Random Vector (np.ndarray) of size (num, 3) with norm 1.
-        If num is None returned value will have size (3,)
-
-    """
-    if num is not None:
-        phi = np.random.uniform(0.0, 2 * np.pi, num)
-        cos_theta = np.random.uniform(-1.0, 1.0, num)
-    else:
-        phi = np.random.uniform(0.0, 2 * np.pi)
-        cos_theta = np.random.uniform(-1.0, 1.0)
-
-    theta = np.arccos(cos_theta)
-    x = np.sin(theta) * np.cos(phi)
-    y = np.sin(theta) * np.sin(phi)
-    z = np.cos(theta)
-
-    return np.stack((x, y, z), axis=-1)
-
-
-class SplitSourceRef:
-    """Clones the point cloud into separate source and reference point clouds"""
-    def __call__(self, sample: Dict):
-        sample['points_raw'] = sample.pop('points')
-        if isinstance(sample['points_raw'], torch.Tensor):
-            sample['points_src'] = sample['points_raw'].detach()
-            sample['points_ref'] = sample['points_raw'].detach()
-        else:  # is numpy
-            sample['points_src'] = sample['points_raw'].copy()
-            sample['points_ref'] = sample['points_raw'].copy()
-
-        n_points = sample['points_raw'].shape[0]
-        sample['correspondences'] = np.tile(np.arange(n_points), (2, 1))
-
-        return sample
-
-
-class Resampler:
-    def __init__(self, num: int):
-        """Resamples a point cloud containing N points to one containing M
-
-        Guaranteed to have no repeated points if M <= N.
-        Otherwise, it is guaranteed that all points appear at least once.
-
-        Args:
-            num (int): Number of points to resample to, i.e. M
-
-        """
-        self.num = num
-
-    def __call__(self, sample):
-
-        if 'deterministic' in sample and sample['deterministic']:
-            np.random.seed(sample['idx'])
-
-        if 'points' in sample:
-            sample['points'], rand_idx = self._resample(sample['points'], self.num)
-        else:
-            if 'crop_proportion' not in sample:
-                src_size, ref_size = self.num, self.num
-            elif len(sample['crop_proportion']) == 1:
-                src_size = math.ceil(sample['crop_proportion'][0] * self.num)
-                ref_size = self.num
-            elif len(sample['crop_proportion']) == 2:
-                src_size = math.ceil(sample['crop_proportion'][0] * self.num)
-                ref_size = math.ceil(sample['crop_proportion'][1] * self.num)
-                src_size = 717  # This is a bug and should be removed, but is kept here to be consistent with Predator
-                ref_size = 717
-            else:
-                raise ValueError('Crop proportion must have 1 or 2 elements')
-
-            points_src, src_rand_idx = self._resample(sample['points_src'], src_size)
-            points_ref, ref_rand_idx = self._resample(sample['points_ref'], ref_size)
-            src_idx_map = np.full(sample['points_src'].shape[0], -1)
-            ref_idx_map = np.full(sample['points_ref'].shape[0], -1)
-            src_idx_map[src_rand_idx] = np.arange(src_size)
-            ref_idx_map[ref_rand_idx] = np.arange(ref_size)
-
-            correspondences = np.stack([src_idx_map[sample['correspondences'][0]],
-                                        ref_idx_map[sample['correspondences'][1]]])
-            correspondences = correspondences[:, np.all(correspondences >= 0, axis=0)]
-
-            sample['correspondences'] = correspondences
-            sample['points_src'] = points_src
-            sample['points_ref'] = points_ref
-            sample['src_overlap'] = sample['src_overlap'][src_rand_idx]  # Assume overlap stays the same after resampling
-            sample['ref_overlap'] = sample['ref_overlap'][ref_rand_idx]
-
-        return sample
-
-    @staticmethod
-    def _resample(points, k):
-        """Resamples the points such that there is exactly k points.
-
-        If the input point cloud has <= k points, it is guaranteed the
-        resampled point cloud contains every point in the input.
-        If the input point cloud has > k points, it is guaranteed the
-        resampled point cloud does not contain repeated point.
-        """
-
-        if k <= points.shape[0]:
-            rand_idxs = np.random.choice(points.shape[0], k, replace=False)
-        elif points.shape[0] == k:
-            rand_idxs = np.arange(points.shape[0])
-        else:
-            rand_idxs = np.concatenate([np.random.choice(points.shape[0], points.shape[0], replace=False),
-                                        np.random.choice(points.shape[0], k - points.shape[0], replace=True)])
-
-        return points[rand_idxs, :], rand_idxs
-
-
-class FixedResampler(Resampler):
-    """Fixed resampling to always choose the first N points.
-    Always deterministic regardless of whether the deterministic flag has been set
-    """
-    @staticmethod
-    def _resample(points, k):
-        raise NotImplementedError
-        multiple = k // points.shape[0]
-        remainder = k % points.shape[0]
-
-        resampled = np.concatenate((np.tile(points, (multiple, 1)), points[:remainder, :]), axis=0)
-        return resampled
-
-
-class RandomJitter:
-    """ generate perturbations """
-    def __init__(self, scale=0.01, clip=0.05):
-        self.scale = scale
-        self.clip = clip
-
-    def jitter(self, pts):
-
-        noise = np.clip(np.random.normal(0.0, scale=self.scale, size=(pts.shape[0], 3)),
-                        a_min=-self.clip, a_max=self.clip)
-        pts[:, :3] += noise  # Add noise to xyz
-
-        return pts
-
-    def __call__(self, sample):
-
-        if 'points' in sample:
-            sample['points'] = self.jitter(sample['points'])
-        else:
-            sample['points_src'] = self.jitter(sample['points_src'])
-            sample['points_ref'] = self.jitter(sample['points_ref'])
-
-        return sample
-
-
-class RandomCrop:
-    """Randomly crops the *source* point cloud.
-
-    A direction is randomly sampled from S2, and we retain points which lie within the
-    half-space oriented in this direction.
-    If p_keep != 0.5, we shift the plane until approximately p_keep points are retained
-    """
-    def __init__(self, p_keep: List = None):
-        if p_keep is None:
-            p_keep = [0.7, 0.7]  # Crop both clouds to 70%
-        self.p_keep = np.array(p_keep, dtype=np.float32)
-
-    @staticmethod
-    def crop(points, p_keep):
-        rand_xyz = uniform_2_sphere()
-        centroid = np.mean(points[:, :3], axis=0)
-        points_centered = points[:, :3] - centroid
-
-        dist_from_plane = np.dot(points_centered, rand_xyz)
-        if p_keep == 0.5:
-            mask = dist_from_plane > 0
-        else:
-            mask = dist_from_plane > np.percentile(dist_from_plane, (1.0 - p_keep) * 100)
-
-        return points[mask, :], mask
-
-    def __call__(self, sample):
-
-        sample['crop_proportion'] = self.p_keep
-        if np.all(self.p_keep == 1.0):
-            return sample  # No need crop
-
-        if 'deterministic' in sample and sample['deterministic']:
-            np.random.seed(sample['idx'])
-
-        if len(self.p_keep) == 1:
-            points_src, src_mask = self.crop(sample['points_src'], self.p_keep[0])
-            points_ref = sample['points_ref']
-            ref_mask = np.ones(sample['points_ref'].shape[0], dtype=np.bool_)
-        else:
-            points_src, src_mask = self.crop(sample['points_src'], self.p_keep[0])
-            points_ref, ref_mask = self.crop(sample['points_ref'], self.p_keep[0])
-
-        # Compute overlap masks
-        src_overlap = np.zeros(sample['points_src'].shape[0], dtype=np.bool_)
-        temp = ref_mask[sample['correspondences'][1]]
-        src_overlap[sample['correspondences'][0][temp]] = 1
-        src_overlap = src_overlap[src_mask]
-
-        ref_overlap = np.zeros(sample['points_ref'].shape[0], dtype=np.bool_)
-        temp = src_mask[sample['correspondences'][0]]
-        ref_overlap[sample['correspondences'][1][temp]] = 1
-        ref_overlap = ref_overlap[ref_mask]
-
-        # Update correspondences
-        src_idx_map = np.full(sample['points_src'].shape[0], -1)
-        src_idx_map[src_mask] = np.arange(src_mask.sum())  # indicates index of new point for each original point index
-        ref_idx_map = np.full(sample['points_ref'].shape[0], -1)
-        ref_idx_map[ref_mask] = np.arange(ref_mask.sum())
-
-        correspondences = np.stack([src_idx_map[sample['correspondences'][0]],
-                                    ref_idx_map[sample['correspondences'][1]]])
-        correspondences = correspondences[:, np.all(correspondences >= 0, axis=0)]
-
-        sample['points_src'] = points_src
-        sample['points_ref'] = points_ref
-        sample['correspondences'] = correspondences
-        sample['src_overlap'] = src_overlap
-        sample['ref_overlap'] = ref_overlap
-
-        return sample
-
-
 class RandomTransformSE3:
     def __init__(self, rot_mag: float = 180.0, trans_mag: float = 1.0, random_mag: bool = False):
         """Applies a random rigid transformation to the source point cloud
@@ -371,75 +140,6 @@ class RandomRotatorZ(RandomTransformSE3):
         return rand_SE3
 
 
-class ShufflePoints:
-    """Shuffles the order of the points"""
-    def __call__(self, sample):
-        if 'points' in sample:
-            sample['points'] = np.random.permutation(sample['points'])
-        else:
-            ref_permute = np.random.permutation(sample['points_ref'].shape[0])
-            src_permute = np.random.permutation(sample['points_src'].shape[0])
-
-            sample['points_ref'] = sample['points_ref'][ref_permute, :]
-            sample['points_src'] = sample['points_src'][src_permute, :]
-
-            sample['ref_overlap'] = sample['ref_overlap'][ref_permute]
-            sample['src_overlap'] = sample['src_overlap'][src_permute]
-
-            ref_idx_map = np.full(sample['points_ref'].shape[0], -1)
-            ref_idx_map[ref_permute] = np.arange(sample['points_ref'].shape[0])
-            src_idx_map = np.full(sample['points_src'].shape[0], -1)
-            src_idx_map[src_permute] = np.arange(sample['points_src'].shape[0])
-            sample['correspondences'] = np.stack([
-                src_idx_map[sample['correspondences'][0]],
-                ref_idx_map[sample['correspondences'][1]]])
-
-        return sample
-
-
-class SetDeterministic:
-    """Adds a deterministic flag to the sample such that subsequent transforms
-    use a fixed random seed where applicable. Used for test"""
-    def __call__(self, sample):
-        sample['deterministic'] = True
-        return sample
-
-
-class Dict2DcpList:
-    """Converts dictionary of tensors into a list of tensors compatible with Deep Closest Point"""
-    def __call__(self, sample):
-
-        target = sample['points_src'][:, :3].transpose().copy()
-        src = sample['points_ref'][:, :3].transpose().copy()
-
-        rotation_ab = sample['transform_gt'][:3, :3].transpose().copy()
-        translation_ab = -rotation_ab @ sample['transform_gt'][:3, 3].copy()
-
-        rotation_ba = sample['transform_gt'][:3, :3].copy()
-        translation_ba = sample['transform_gt'][:3, 3].copy()
-
-        euler_ab = Rotation.from_dcm(rotation_ab).as_euler('zyx').copy()
-        euler_ba = Rotation.from_dcm(rotation_ba).as_euler('xyz').copy()
-
-        return src, target, \
-               rotation_ab, translation_ab, rotation_ba, translation_ba, \
-               euler_ab, euler_ba
-
-
-class Dict2PointnetLKList:
-    """Converts dictionary of tensors into a list of tensors compatible with PointNet LK"""
-    def __call__(self, sample):
-
-        if 'points' in sample:
-            # Train Classifier (pretraining)
-            return sample['points'][:, :3], sample['label']
-        else:
-            # Train PointNetLK
-            transform_gt_4x4 = np.concatenate([sample['transform_gt'],
-                                               np.array([[0.0, 0.0, 0.0, 1.0]], dtype=np.float32)], axis=0)
-            return sample['points_src'][:, :3], sample['points_ref'][:, :3], transform_gt_4x4
-
-
 # my transforms----------------------------
 class ReadPcd:
     """read pcd from .pcd"""
@@ -448,6 +148,10 @@ class ReadPcd:
         sample['src_pcd'] = np.asarray(sample['src_pcd']).astype(np.float32)
         sample['tar_pcd'] = o3d.io.read_point_cloud(sample['tar_pcd']).points
         sample['tar_pcd'] = np.asarray(sample['tar_pcd']).astype(np.float32)
+
+        # shuffle
+        sample['src_pcd'] = np.random.permutation(sample['src_pcd'])
+        sample['tar_pcd'] = np.random.permutation(sample['tar_pcd'])
 
         n_points = sample['src_pcd'].shape[0]
         sample['correspondences'] = np.tile(np.arange(n_points), (2, 1))
@@ -460,6 +164,25 @@ class RandomTransform(RandomTransformSE3_euler):
         sample['src_raw'] = sample.pop('src_pcd')
         sample['src_pcd'] = src_transformed
         return sample
+    
+class RandomJitter:
+    """ generate perturbations """
+    def __init__(self, scale=0.003, clip=0.01):
+        self.scale = scale
+        self.clip = clip
+
+    def jitter(self, pts):
+        noise = np.clip(np.random.normal(0.0, scale=self.scale, size=(pts.shape[0], 3)),
+                        a_min=-self.clip, a_max=self.clip)
+        pts[:, :3] += noise  # Add noise to xyz
+        return pts
+
+    def __call__(self, sample):
+        sample['src_pcd'] = self.jitter(sample['src_pcd'])
+        sample['tar_pcd'] = self.jitter(sample['tar_pcd'])
+        return sample
+
+
 class Coorespondence_getter():
     def __init__(self):
         self.search_radius = 5

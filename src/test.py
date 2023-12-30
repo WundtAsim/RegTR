@@ -5,7 +5,7 @@ from easydict import EasyDict
 from cvhelpers.misc import prepare_logger
 
 from data_loaders import get_dataloader
-from models import get_model
+from my_models import get_model
 from trainer import Trainer
 from utils.misc import load_config
 

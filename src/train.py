@@ -6,7 +6,7 @@ from cvhelpers.misc import prepare_logger
 from cvhelpers.torch_helpers import setup_seed
 
 from data_loaders import get_dataloader
-from models import get_model
+from my_models import get_model
 from trainer import Trainer
 from utils.misc import load_config
 

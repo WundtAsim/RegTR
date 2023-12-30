@@ -10,22 +10,20 @@ from . import CustomData_transforms as Transforms
 
 
 def get_train_datasets(args: argparse.Namespace):
-    train_transforms, val_transforms = get_transforms(args.noise_type, args.rot_mag, args.trans_mag,
-                                                      args.num_points)
+    train_transforms, val_transforms = get_transforms(args.noise_type, args.rot_mag, args.trans_mag)
     train_transforms = torchvision.transforms.Compose(train_transforms)
     val_transforms = torchvision.transforms.Compose(val_transforms)
 
     train_data = CustomData(args, args.root, subset='train',
                              transform=train_transforms)
-    val_data = CustomData(args, args.root, subset='test',
+    val_data = CustomData(args, args.root, subset='val',
                            transform=val_transforms)
 
     return train_data, val_data
 
 
 def get_test_datasets(args: argparse.Namespace):
-    _, test_transforms = get_transforms(args.noise_type, args.rot_mag, args.trans_mag,
-                                        args.num_points)
+    _, test_transforms = get_transforms(args.noise_type, args.rot_mag, args.trans_mag)
     test_transforms = torchvision.transforms.Compose(test_transforms)
 
     test_data = CustomData(args, args.root, subset='test',
@@ -35,22 +33,11 @@ def get_test_datasets(args: argparse.Namespace):
 
 
 def get_transforms(noise_type: str,
-                   rot_mag: float = 45.0, trans_mag: float = 0.5,
-                   num_points: int = 1024, partial_p_keep: List = None):
+                   rot_mag: float = 45.0, trans_mag: float = 0.5):
     """Get the list of transformation to be used for training or evaluating RegNet
 
     Args:
-        noise_type: Either 'clean', 'jitter', 'crop'.
-          Depending on the option, some of the subsequent arguments may be ignored.
-        rot_mag: Magnitude of rotation perturbation to apply to source, in degrees.
-          Default: 45.0 (same as Deep Closest Point)
-        trans_mag: Magnitude of translation perturbation to apply to source.
-          Default: 0.5 (same as Deep Closest Point)
-        num_points: Number of points to uniformly resample to.
-          Note that this is with respect to the full point cloud. The number of
-          points will be proportionally less if cropped
-        partial_p_keep: Proportion to keep during cropping, [src_p, ref_p]
-          Default: [0.7, 0.7], i.e. Crop both source and reference to ~70%
+        noise_type: Either 'clean', 'custom'.
 
     Returns:
         train_transforms, test_transforms: Both contain list of transformations to be applied
@@ -59,58 +46,25 @@ def get_transforms(noise_type: str,
     partial_p_keep = partial_p_keep if partial_p_keep is not None else [0.7, 0.7]
 
     if noise_type == "clean":
-        # 1-1 correspondence for each point (resample first before splitting), no noise
-        train_transforms = [Transforms.Resampler(num_points),
-                            Transforms.SplitSourceRef(),
-                            Transforms.RandomTransformSE3_euler(rot_mag=rot_mag, trans_mag=trans_mag),
-                            Transforms.ShufflePoints()]
-
-        test_transforms = [Transforms.SetDeterministic(),
-                           Transforms.FixedResampler(num_points),
-                           Transforms.SplitSourceRef(),
-                           Transforms.RandomTransformSE3_euler(rot_mag=rot_mag, trans_mag=trans_mag),
-                           Transforms.ShufflePoints()]
-
-    elif noise_type == "jitter":
-        # Points randomly sampled (might not have perfect correspondence), gaussian noise to position
-        train_transforms = [Transforms.SplitSourceRef(),
-                            Transforms.RandomTransformSE3_euler(rot_mag=rot_mag, trans_mag=trans_mag),
-                            Transforms.Resampler(num_points),
-                            Transforms.RandomJitter(),
-                            Transforms.ShufflePoints()]
-
-        test_transforms = [Transforms.SetDeterministic(),
-                           Transforms.SplitSourceRef(),
-                           Transforms.RandomTransformSE3_euler(rot_mag=rot_mag, trans_mag=trans_mag),
-                           Transforms.Resampler(num_points),
-                           Transforms.RandomJitter(),
-                           Transforms.ShufflePoints()]
-
-    elif noise_type == "crop":
-        # Both source and reference point clouds cropped, plus same noise in "jitter"
-        train_transforms = [Transforms.SplitSourceRef(),
-                            Transforms.RandomCrop(partial_p_keep),
-                            Transforms.RandomTransformSE3_euler(rot_mag=rot_mag, trans_mag=trans_mag),
-                            Transforms.Resampler(num_points),
-                            Transforms.RandomJitter(),
-                            Transforms.ShufflePoints()]
-
-        test_transforms = [Transforms.SetDeterministic(),
-                           Transforms.SplitSourceRef(),
-                           Transforms.RandomCrop(partial_p_keep),
-                           Transforms.RandomTransformSE3_euler(rot_mag=rot_mag, trans_mag=trans_mag),
-                           Transforms.Resampler(num_points),
-                           Transforms.RandomJitter(),
-                           Transforms.ShufflePoints()]
-        
-    elif noise_type == "custom":
-        # Points randomly sampled (might not have perfect correspondence), gaussian noise to position
+        # 1-1 correspondence for each shuffled point, no noise
         train_transforms = [Transforms.ReadPcd(),
                             Transforms.RandomTransform(rot_mag=rot_mag, trans_mag=trans_mag),
                             Transforms.Coorespondence_getter()]
 
         test_transforms = [Transforms.ReadPcd(),
                             Transforms.RandomTransform(rot_mag=rot_mag, trans_mag=trans_mag),
+                            Transforms.Coorespondence_getter()]
+        
+    elif noise_type == "custom":
+        # shuffle + random transform + jitter
+        train_transforms = [Transforms.ReadPcd(),
+                            Transforms.RandomTransform(rot_mag=rot_mag, trans_mag=trans_mag),
+                            Transforms.RandomJitter(),
+                            Transforms.Coorespondence_getter()]
+
+        test_transforms = [Transforms.ReadPcd(),
+                            Transforms.RandomTransform(rot_mag=rot_mag, trans_mag=trans_mag),
+                            Transforms.RandomJitter(),
                             Transforms.Coorespondence_getter()]
     else:
         raise NotImplementedError
@@ -136,7 +90,7 @@ class CustomData(Dataset):
 
         assert os.path.exists(os.path.join(root))
 
-        dirname = 'train_data' if subset == 'train' else 'val_data'
+        dirname = subset + "_data"
         path = os.path.join(self._root, dirname, 'src')
         self._src_files = [os.path.join(path, item) for item in sorted(os.listdir(path))]
         path = os.path.join(root, dirname, 'tar')
