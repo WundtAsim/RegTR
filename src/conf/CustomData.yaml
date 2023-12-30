@@ -51,7 +51,7 @@ kpconv_options:
 
 
 model:
-    model: regtr.RegTR100
+    model: regtr.RegTR
 
     # Transformer
     attention_type: dot_prod

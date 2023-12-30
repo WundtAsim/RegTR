@@ -42,9 +42,6 @@ def get_transforms(noise_type: str,
     Returns:
         train_transforms, test_transforms: Both contain list of transformations to be applied
     """
-
-    partial_p_keep = partial_p_keep if partial_p_keep is not None else [0.7, 0.7]
-
     if noise_type == "clean":
         # 1-1 correspondence for each shuffled point, no noise
         train_transforms = [Transforms.ReadPcd(),
