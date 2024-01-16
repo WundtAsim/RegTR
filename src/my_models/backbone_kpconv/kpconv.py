@@ -237,7 +237,11 @@ def batch_grid_subsampling_kpconv_gpu(points, batches_len, features=None, labels
 
     s_points = sparse_tensor.features
     s_len = torch.tensor([f.shape[0] for f in sparse_tensor.decomposed_features], device=device)
-    return s_points, s_len
+    # get index of nodes in every batch
+    s_index = sparse_tensor.unique_index # (M, 1)
+    batch_ids = torch.searchsorted(batch_start_end, s_index, right=True) - 1
+    indices_within_batch = s_index - batch_start_end[batch_ids]
+    return s_points, s_len, indices_within_batch
 
 
 def batch_neighbors_kpconv(queries, supports, q_batches, s_batches, radius, max_neighbors):
@@ -446,6 +450,7 @@ class PreprocessorGPU(torch.nn.Module):
         input_pools = []
         input_upsamples = []
         input_batch_lens = []
+        super_indices = []
 
         for block_i, block in enumerate(config.architecture):
             # Stop when meeting a global pooling or upsampling
@@ -486,7 +491,7 @@ class PreprocessorGPU(torch.nn.Module):
                 dl = 2 * r_normal / config.conv_radius
 
                 # Subsampled points
-                pool_p, pool_b = batch_grid_subsampling_kpconv_gpu(
+                pool_p, pool_b, s_index = batch_grid_subsampling_kpconv_gpu(
                     batched_points, batched_lengths, sampleDl=dl)
 
                 # Radius of pooled neighbors
@@ -509,6 +514,7 @@ class PreprocessorGPU(torch.nn.Module):
                 pool_p = torch.zeros((0, 3), dtype=torch.float32)
                 pool_b = torch.zeros((0,), dtype=torch.int64)
                 up_i = torch.zeros((0, 1), dtype=torch.int64)
+                s_index = torch.zeros((0, 1), dtype=torch.int64)
 
             # Updating input lists
             input_points.append(batched_points)
@@ -516,6 +522,7 @@ class PreprocessorGPU(torch.nn.Module):
             input_pools.append(pool_i.long())
             input_upsamples.append(up_i.long())
             input_batch_lens.append(batched_lengths)
+            super_indices.append(s_index)
 
             # New points for next layer
             batched_points = pool_p
@@ -532,6 +539,7 @@ class PreprocessorGPU(torch.nn.Module):
             'pools': input_pools,
             'upsamples': input_upsamples,
             'stack_lengths': input_batch_lens,
+            'super_indices': super_indices,
         }
 
         return data

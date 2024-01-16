@@ -18,7 +18,7 @@ from utils.misc import load_config
 #############
 parser = argparse.ArgumentParser()
 # General
-parser.add_argument('--config', type=str, help='Path to the config file.')
+parser.add_argument('--config', type=str, default='conf/CustomData.yaml', help='Path to the config file.')
 # Logging
 parser.add_argument('--logdir', type=str, default='../logs',
                     help='Directory to store logs, summaries, checkpoints.')

@@ -55,11 +55,13 @@ def get_transforms(noise_type: str,
     elif noise_type == "custom":
         # shuffle + random transform + jitter
         train_transforms = [Transforms.ReadPcd(),
+                            Transforms.Shuffle(),
                             Transforms.RandomTransform(rot_mag=rot_mag, trans_mag=trans_mag),
                             Transforms.RandomJitter(),
                             Transforms.Coorespondence_getter()]
 
         test_transforms = [Transforms.ReadPcd(),
+                           Transforms.Shuffle(),
                             Transforms.RandomTransform(rot_mag=rot_mag, trans_mag=trans_mag),
                             Transforms.RandomJitter(),
                             Transforms.Coorespondence_getter()]
@@ -115,7 +117,9 @@ class CustomData(Dataset):
         sample_out = {
             'src_xyz': torch.from_numpy(sample['src_pcd'][:, :3]),
             'tgt_xyz': torch.from_numpy(sample['tar_pcd'][:, :3]),
-            'tgt_raw': torch.from_numpy(sample['src_raw'][:, :3]),
+            'src_raw': torch.from_numpy(sample['src_raw'][:, :3]),
+            'src_normals': torch.from_numpy(sample['src_normals'][:, :3]),
+            'tgt_normals': torch.from_numpy(sample['tar_normals'][:, :3]),
             'src_overlap': torch.from_numpy(sample['src_overlap']),
             'tgt_overlap': torch.from_numpy(sample['ref_overlap']),
             'correspondences': torch.from_numpy(sample['correspondences']),

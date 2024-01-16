@@ -144,19 +144,33 @@ class RandomRotatorZ(RandomTransformSE3):
 class ReadPcd:
     """read pcd from .pcd"""
     def __call__(self, sample: Dict):
-        sample['src_pcd'] = o3d.io.read_point_cloud(sample['src_pcd']).points
-        sample['src_pcd'] = np.asarray(sample['src_pcd']).astype(np.float32)
-        sample['tar_pcd'] = o3d.io.read_point_cloud(sample['tar_pcd']).points
-        sample['tar_pcd'] = np.asarray(sample['tar_pcd']).astype(np.float32)
+        sample['src_pcd'] = o3d.io.read_point_cloud(sample['src_pcd'])
+        sample['src_normals'] = np.asarray(sample['src_pcd'].normals).astype(np.float32)
+        sample['src_pcd'] = np.asarray(sample['src_pcd'].points).astype(np.float32)
 
-        # shuffle
-        sample['src_pcd'] = np.random.permutation(sample['src_pcd'])
-        sample['tar_pcd'] = np.random.permutation(sample['tar_pcd'])
+        sample['tar_pcd'] = o3d.io.read_point_cloud(sample['tar_pcd'])
+        sample['tar_normals'] = np.asarray(sample['tar_pcd'].normals).astype(np.float32)
+        sample['tar_pcd'] = np.asarray(sample['tar_pcd'].points).astype(np.float32)        
 
         n_points = sample['src_pcd'].shape[0]
-        sample['correspondences'] = np.tile(np.arange(n_points), (2, 1))
+        sample['correspondences'] = np.tile(np.arange(n_points), (2, 1)) # (2, n_points)
 
         return sample
+    
+class Shuffle:
+    """Shuffle the point cloud"""
+    def __call__(self, sample: Dict):
+        # shuffle
+        src_index = np.arange(sample['src_pcd'].shape[0])
+        tar_index = np.arange(sample['tar_pcd'].shape[0])
+        np.random.shuffle(src_index)
+        np.random.shuffle(tar_index)
+        sample['src_pcd'] = sample['src_pcd'][src_index]
+        sample['tar_pcd'] = sample['tar_pcd'][tar_index]
+        sample['src_normals'] = sample['src_normals'][src_index]
+        sample['tar_normals'] = sample['tar_normals'][tar_index]
+        return sample
+
 class RandomTransform(RandomTransformSE3_euler):
     def __call__(self, sample:Dict):
         src_transformed, transform_r_s, _ = self.transform(sample['src_pcd'])
@@ -207,7 +221,8 @@ class Coorespondence_getter():
         tar_overlap = np.zeros(sample['tar_pcd'].shape[0], dtype=bool)
         src_overlap[sample['correspondences'][0]] = 1
         tar_overlap[sample['correspondences'][1]] = 1
-        sample['ref_overlap'] = src_overlap
-        sample['src_overlap'] = tar_overlap
+        sample['ref_overlap'] = tar_overlap
+        sample['src_overlap'] = src_overlap
         return sample
+    
 # ----------------------------------------------

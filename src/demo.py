@@ -14,7 +14,7 @@ import numpy as np
 import open3d as o3d
 import torch
 from easydict import EasyDict
-from matplotlib.pyplot import cm as colormap
+import matplotlib
 
 import cvhelpers.visualization as cvv
 import cvhelpers.colors as colors
@@ -52,15 +52,15 @@ _examples = [
      f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/val_data/src/src_91_left_{num}.pcd',
      f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/val_data/tar/tar_91_left_{num}.pcd'),
      # 6 use custom to test custom data--5mm-voxel
-    ('../logs/CustomData/231222/ckpt/model-65664.pth',
-     '/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/val_data/src/src_92_left_3.pcd',
-     '/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/val_data/tar/tar_92_left_3.pcd'),
+    ('../logs/CustomData/231230/ckpt/model-580608.pth',
+     '/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/src/src_96_left_0.pcd',
+     '/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/tar/tar_96_left_0.pcd'),
 ]
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--example', type=int, default=0,
+parser.add_argument('--example', type=int, default=6,
                     help=f'Example pair to run (between 0 and {len(_examples) - 1})')
-parser.add_argument('--threshold', type=float, default=0.5,
+parser.add_argument('--threshold', type=float, default=0.4,
                     help='Controls viusalization of keypoints outside overlap region.')
 opt = parser.parse_args()
 
@@ -91,9 +91,14 @@ def visualize_result(src_xyz: np.ndarray, tgt_xyz: np.ndarray,
     """
 
     large_pt_size = 4
-    color_mapper = colormap.ScalarMappable(norm=None, cmap=colormap.get_cmap('coolwarm'))
+    color_mapper = matplotlib.pyplot.cm.ScalarMappable(norm=None, cmap=matplotlib.colormaps.get_cmap('coolwarm'))
     overlap_colors = (color_mapper.to_rgba(src_overlap[:, 0])[:, :3] * 255).astype(np.uint8)
     m = src_overlap[:, 0] > threshold
+    # test
+    print("threshord:",threshold)
+    print("src_overlap:",src_overlap[:,0])
+    print("m:",m)
+    # test
 
     vis = cvv.Visualizer(
         win_size=(1600, 1000),

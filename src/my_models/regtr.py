@@ -5,13 +5,12 @@ import math
 import torch
 import torch.nn as nn
 
-from models.backbone_kpconv.kpconv import KPFEncoder, PreprocessorGPU, compute_overlaps
-from models.generic_reg_model import GenericRegModel
-from models.losses.corr_loss import CorrCriterion
-from models.losses.feature_loss import InfoNCELossFull, CircleLossFull
-from models.transformer.position_embedding import PositionEmbeddingCoordsSine, \
-    PositionEmbeddingLearned
-from models.transformer.transformers import \
+from my_models.backbone_kpconv.kpconv import KPFEncoder, PreprocessorGPU, compute_overlaps
+from my_models.generic_reg_model import GenericRegModel
+from my_models.losses.corr_loss import CorrCriterion
+from my_models.losses.feature_loss import InfoNCELossFull, CircleLossFull
+from my_models.transformer.position_embedding import PPFEmbeddingSin
+from my_models.transformer.transformers import \
     TransformerCrossEncoderLayer, TransformerCrossEncoder
 from utils.se3_torch import compute_rigid_transform, se3_transform_list, se3_inv
 from utils.seq_manipulation import split_src_tgt, pad_sequence, unpad_sequences
@@ -39,10 +38,9 @@ class RegTR(GenericRegModel):
         # Embeddings
         #######################
         if cfg.get('pos_emb_type', 'sine') == 'sine':
-            self.pos_embed = PositionEmbeddingCoordsSine(3, cfg.d_embed,
-                                                         scale=cfg.get('pos_emb_scaling', 1.0))
+            self.pos_embed = PPFEmbeddingSin(cfg.d_embed)
         elif cfg['pos_emb_type'] == 'learned':
-            self.pos_embed = PositionEmbeddingLearned(3, cfg.d_embed)
+            self.pos_embed = PPFEmbeddingSin(cfg.d_embed)
         else:
             raise NotImplementedError
 
@@ -117,8 +115,11 @@ class RegTR(GenericRegModel):
         kpconv_meta = self.preprocessor(batch['src_xyz'] + batch['tgt_xyz'])
         batch['kpconv_meta'] = kpconv_meta
         slens = [s.tolist() for s in kpconv_meta['stack_lengths']]
+        ## get nums of points in batch
         slens_c = slens[-1]
         src_slens_c, tgt_slens_c = slens_c[:B], slens_c[B:]
+        slens_points = slens[0]
+        src_slens_points, tgt_slens_points = slens_points[:B], slens_points[B:]
         feats0 = torch.ones_like(kpconv_meta['points'][0][:, 0:1])
 
         if _TIMEIT:
@@ -146,13 +147,22 @@ class RegTR(GenericRegModel):
         src_feats_un, tgt_feats_un = split_src_tgt(both_feats_un, slens_c)
 
         # Position embedding for downsampled points
-        src_xyz_c, tgt_xyz_c = split_src_tgt(kpconv_meta['points'][-1], slens_c)
-        src_pe, tgt_pe = split_src_tgt(self.pos_embed(kpconv_meta['points'][-1]), slens_c)
+        src_xyz_c, tgt_xyz_c = split_src_tgt(kpconv_meta['points'][-1], slens_c) 
+        batch_normals = batch['src_normals'] + batch['tgt_normals']
+        nodes_indices = torch.split(kpconv_meta['super_indices'][0], slens_c, dim=0) 
+        nodes_normals = [batch_normals[i][nodes_indices[i]] for i in range(len(batch_normals))]
+        global_embeddings, local_embeddings = self.pos_embed(
+            points = batch['src_xyz'] + batch['tgt_xyz'], 
+            nodes = list(src_xyz_c + tgt_xyz_c), 
+            points_normals = batch_normals, 
+            nodes_normals = nodes_normals) # List(2*batch) of (M, M, D), List(2*batch) of (M, D)
+        src_pe, tgt_pe = local_embeddings[:B], local_embeddings[B:]
         src_pe_padded, _, _ = pad_sequence(src_pe)
         tgt_pe_padded, _, _ = pad_sequence(tgt_pe)
 
         # Performs padding, then apply attention (REGTR "encoder" stage) to condition on the other
         # point cloud
+        # padding_mask is used to mask out the padded points, true for padded points.
         src_feats_padded, src_key_padding_mask, _ = pad_sequence(src_feats_un,
                                                                  require_padding_mask=True)
         tgt_feats_padded, tgt_key_padding_mask, _ = pad_sequence(tgt_feats_un,

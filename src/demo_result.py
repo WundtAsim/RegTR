@@ -108,12 +108,12 @@ def transform_point_cloud(point_cloud, transformation_matrix):
 #---------------------------------------------------------------------------------------------------------------------------------------
 
 _examples = [
-    # 0 use custom model to test custom data
+    # 0 use result of 12-22
     ('../logs/CustomData/231222/ckpt/model-756864.pth',
      '/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/val_data/src',
      '/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/val_data/tar'),
-     # 1 use custom to test custom data--5mm-voxel
-    ('../logs/CustomData/231222/ckpt/model-65664.pth',
+     # 1 use result of 12-30
+    ('../logs/CustomData/231230/ckpt/model-580608.pth',
      '/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/val_data/src',
      '/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/val_data/tar'),
 ]

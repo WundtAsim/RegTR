@@ -13,7 +13,7 @@ from cvhelpers.torch_helpers import all_to_device, all_isfinite,\
     CheckPointManager, TorchDebugger
 
 from utils.misc import StatsMeter
-from models.generic_model import GenericModel
+from my_models.generic_model import GenericModel
 from utils.misc import metrics_to_string
 
 

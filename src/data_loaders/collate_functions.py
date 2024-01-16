@@ -10,8 +10,9 @@ def collate_pair(list_data):
 
     # Collate as normal, other than fields that cannot be collated due to differing sizes,
     # we retain it as a python list
-    to_retain_as_list = ['src_xyz', 'tgt_xyz', 'tgt_raw',
+    to_retain_as_list = ['src_xyz', 'tgt_xyz', 'src_raw',
                          'src_overlap', 'tgt_overlap',
+                         'src_normals', 'tgt_normals',
                          'correspondences',
                          'src_path', 'tgt_path',
                          'idx']

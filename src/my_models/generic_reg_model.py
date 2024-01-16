@@ -8,8 +8,8 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 
 from cvhelpers.torch_helpers import to_numpy
-from models.generic_model import GenericModel
-from models.scheduler.warmup import WarmUpScheduler
+from my_models.generic_model import GenericModel
+from my_models.scheduler.warmup import WarmUpScheduler
 from benchmark.benchmark_predator import benchmark as benchmark_predator
 import benchmark.benchmark_modelnet as benchmark_modelnet
 from utils.misc import StatsMeter, metrics_to_string
