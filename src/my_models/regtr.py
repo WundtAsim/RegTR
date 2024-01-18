@@ -13,7 +13,7 @@ from my_models.transformer.position_embedding import PPFEmbeddingSin
 from my_models.transformer.transformers import \
     TransformerCrossEncoderLayer, TransformerCrossEncoder
 from utils.se3_torch import compute_rigid_transform, se3_transform_list, se3_inv
-from utils.seq_manipulation import split_src_tgt, pad_sequence, unpad_sequences
+from utils.seq_manipulation import split_src_tgt, pad_sequence, unpad_sequences, pad_sequence_3d
 from utils.viz import visualize_registration
 _TIMEIT = False
 
@@ -156,9 +156,14 @@ class RegTR(GenericRegModel):
             nodes = list(src_xyz_c + tgt_xyz_c), 
             points_normals = batch_normals, 
             nodes_normals = nodes_normals) # List(2*batch) of (M, M, D), List(2*batch) of (M, D)
+        # deal with the local embeddings
         src_pe, tgt_pe = local_embeddings[:B], local_embeddings[B:]
         src_pe_padded, _, _ = pad_sequence(src_pe)
         tgt_pe_padded, _, _ = pad_sequence(tgt_pe)
+        # deal with the global embeddings, only in self attention
+        src_ge, tgt_ge = global_embeddings[:B], global_embeddings[B:]
+        src_ge_padded = pad_sequence_3d(src_ge)
+        tgt_ge_padded = pad_sequence_3d(tgt_ge)
 
         # Performs padding, then apply attention (REGTR "encoder" stage) to condition on the other
         # point cloud
@@ -173,6 +178,8 @@ class RegTR(GenericRegModel):
             tgt_key_padding_mask=tgt_key_padding_mask,
             src_pos=src_pe_padded if self.cfg.transformer_encoder_has_pos_emb else None,
             tgt_pos=tgt_pe_padded if self.cfg.transformer_encoder_has_pos_emb else None,
+            src_global=src_ge_padded if self.cfg.transformer_encoder_has_pos_emb else None,
+            tgt_global=tgt_ge_padded if self.cfg.transformer_encoder_has_pos_emb else None,
         )
 
         src_corr_list, tgt_corr_list, src_overlap_list, tgt_overlap_list = \

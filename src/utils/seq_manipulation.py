@@ -46,3 +46,23 @@ def split_src_tgt(feats, stack_lengths, dim=0):
     B = len(stack_lengths) // 2
     separate = torch.split(feats, stack_lengths, dim=dim)
     return separate[:B], separate[B:]
+
+def pad_sequence_3d(sequences, padding_value=0):
+    '''
+    for 3d sequences padding
+    '''
+    # Find max dimensions
+    max_dim1 = max([s.size(0) for s in sequences])
+    max_dim2 = max([s.size(1) for s in sequences])
+    max_dim3 = max([s.size(2) for s in sequences])
+
+    # Create a tensor filled with padding_value
+    out_dims = (len(sequences), max_dim1, max_dim2, max_dim3)
+    out_tensor = sequences[0].data.new(*out_dims).fill_(padding_value)
+
+    # Copy sequences to the right places in out_tensor
+    for i, tensor in enumerate(sequences):
+        dim1, dim2, dim3 = tensor.size()
+        out_tensor[i, :dim1, :dim2, :dim3] = tensor
+
+    return out_tensor
