@@ -15,7 +15,17 @@ import open3d as o3d
 from utils.se3_numpy import se3_transform, se3_inv
 from utils.so3_numpy import so3_transform
 
-class RandomTransformSE3:
+
+# noinspection PyPep8Naming
+class RandomTransformSE3_euler:
+    """
+    Generate a random SE3 transformation (3, 4) 
+    Same as RandomTransformSE3, but rotates using euler angle rotations
+
+    This transformation is consistent to Deep Closest Point but does not
+    generate uniform rotations
+
+    """
     def __init__(self, rot_mag: float = 180.0, trans_mag: float = 1.0, random_mag: bool = False):
         """Applies a random rigid transformation to the source point cloud
 
@@ -29,66 +39,6 @@ class RandomTransformSE3:
         self._rot_mag = rot_mag
         self._trans_mag = trans_mag
         self._random_mag = random_mag
-
-    def generate_transform(self):
-        """Generate a random SE3 transformation (3, 4) """
-
-        if self._random_mag:
-            attentuation = np.random.random()
-            rot_mag, trans_mag = attentuation * self._rot_mag, attentuation * self._trans_mag
-        else:
-            rot_mag, trans_mag = self._rot_mag, self._trans_mag
-
-        # Generate rotation
-        rand_rot = special_ortho_group.rvs(3)
-        axis_angle = Rotation.as_rotvec(Rotation.from_dcm(rand_rot))
-        axis_angle *= rot_mag / 180.0
-        rand_rot = Rotation.from_rotvec(axis_angle).as_dcm()
-
-        # Generate translation
-        rand_trans = np.random.uniform(-trans_mag, trans_mag, 3)
-        rand_SE3 = np.concatenate((rand_rot, rand_trans[:, None]), axis=1).astype(np.float32)
-
-        return rand_SE3
-
-    def apply_transform(self, p0, transform_mat):
-        p1 = se3_transform(transform_mat, p0[:, :3])
-        if p0.shape[1] == 6:  # Need to rotate normals also
-            n1 = so3_transform(transform_mat[:3, :3], p0[:, 3:6])
-            p1 = np.concatenate((p1, n1), axis=-1)
-
-        igt = transform_mat
-        gt = se3_inv(igt)
-
-        return p1, gt, igt
-
-    def transform(self, tensor):
-        transform_mat = self.generate_transform()
-        return self.apply_transform(tensor, transform_mat)
-
-    def __call__(self, sample):
-
-        if 'deterministic' in sample and sample['deterministic']:
-            np.random.seed(sample['idx'])
-
-        if 'points' in sample:
-            sample['points'], _, _ = self.transform(sample['points'])
-        else:
-            src_transformed, transform_r_s, transform_s_r = self.transform(sample['points_src'])
-            sample['transform_gt'] = transform_r_s  # Apply to source to get reference
-            sample['points_src'] = src_transformed
-
-        return sample
-
-
-# noinspection PyPep8Naming
-class RandomTransformSE3_euler(RandomTransformSE3):
-    """Same as RandomTransformSE3, but rotates using euler angle rotations
-
-    This transformation is consistent to Deep Closest Point but does not
-    generate uniform rotations
-
-    """
     def generate_transform(self):
 
         if self._random_mag:
@@ -122,22 +72,18 @@ class RandomTransformSE3_euler(RandomTransformSE3):
 
         rand_SE3 = np.concatenate((R_ab, t_ab[:, None]), axis=1).astype(np.float32)
         return rand_SE3
+    
+    def apply_transform(self, p0, n0, transform_mat):
+        p1 = se3_transform(transform_mat, p0[:, :3])
+        n1 = so3_transform(transform_mat[:3, :3], n0)
+        igt = transform_mat
+        gt = se3_inv(igt)
 
+        return p1, n1, gt, igt
 
-class RandomRotatorZ(RandomTransformSE3):
-    """Applies a random z-rotation to the source point cloud"""
-
-    def __init__(self):
-        super().__init__(rot_mag=360)
-
-    def generate_transform(self):
-        """Generate a random SE3 transformation (3, 4) """
-
-        rand_rot_deg = np.random.random() * self._rot_mag
-        rand_rot = Rotation.from_euler('z', rand_rot_deg, degrees=True).as_dcm()
-        rand_SE3 = np.pad(rand_rot, ((0, 0), (0, 1)), mode='constant').astype(np.float32)
-
-        return rand_SE3
+    def transform(self, tensor, normal):
+        transform_mat = self.generate_transform()
+        return self.apply_transform(tensor, normal, transform_mat)
 
 
 # my transforms----------------------------
@@ -173,10 +119,12 @@ class Shuffle:
 
 class RandomTransform(RandomTransformSE3_euler):
     def __call__(self, sample:Dict):
-        src_transformed, transform_r_s, _ = self.transform(sample['src_pcd'])
+        src_transformed, src_normal_transformed, transform_r_s, _ = self.transform(sample['src_pcd'],
+                                                           sample['src_normals'])
         sample['transform_gt'] = transform_r_s  # Apply to source to get reference
         sample['src_raw'] = sample.pop('src_pcd')
         sample['src_pcd'] = src_transformed
+        sample['src_normals'] = src_normal_transformed
         return sample
     
 class RandomJitter:

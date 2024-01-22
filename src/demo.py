@@ -23,42 +23,20 @@ from models.regtr import RegTR
 from utils.misc import load_config
 from utils.se3_numpy import se3_transform
 
-num = 13
+num = 7
 _examples = [
-    # 3DMatch examples
-    # 0
-    ('../trained_models/3dmatch/ckpt/model-best.pth',
-     '../data/indoor/test/7-scenes-redkitchen/cloud_bin_0.pth',
-     '../data/indoor/test/7-scenes-redkitchen/cloud_bin_5.pth'),
-    # 1
-    ('../trained_models/3dmatch/ckpt/model-best.pth',
-     '../data/indoor/test/sun3d-hotel_umd-maryland_hotel3/cloud_bin_8.pth',
-     '../data/indoor/test/sun3d-hotel_umd-maryland_hotel3/cloud_bin_15.pth'),
-    # 2
-    ('../trained_models/3dmatch/ckpt/model-best.pth',
-     '../data/indoor/test/sun3d-home_at-home_at_scan1_2013_jan_1/cloud_bin_38.pth',
-     '../data/indoor/test/sun3d-home_at-home_at_scan1_2013_jan_1/cloud_bin_41.pth'),
-    # ModelNet examples
-    # 3
-    ('../trained_models/modelnet/ckpt/model-best.pth',
-     '../data/modelnet_demo_data/modelnet_test_2_0.ply',
-     '../data/modelnet_demo_data/modelnet_test_2_1.ply'),
-    # 4
-    ('../trained_models/modelnet/ckpt/model-best.pth',
-     '../data/modelnet_demo_data/modelnet_test_630_0.ply',
-     '../data/modelnet_demo_data/modelnet_test_630_1.ply'),
-    # 5 use custom model to test custom data
-    ('../logs/CustomData/231222/ckpt/model-756864.pth',
-     f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/val_data/src/src_91_left_{num}.pcd',
-     f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/val_data/tar/tar_91_left_{num}.pcd'),
-     # 6 use custom to test custom data--5mm-voxel
-    ('../logs/CustomData/231230/ckpt/model-580608.pth',
-     '/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/src/src_96_left_0.pcd',
-     '/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/tar/tar_96_left_0.pcd'),
+    # 0 use custom model to test custom data
+    ('../logs/CustomData/240119/ckpt/model-345600.pth',
+     f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/src/src_91_left_{num}.pcd',
+     f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/tar/tar_91_left_{num}.pcd'),
+     # 1 use custom to test custom data--5mm-voxel
+    ('../logs/CustomData/240119/ckpt/model-345600.pth',
+     f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/src/src_96_left_{num}.pcd',
+     f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/tar/tar_96_left_{num}.pcd'),
 ]
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--example', type=int, default=6,
+parser.add_argument('--example', type=int, default=0,
                     help=f'Example pair to run (between 0 and {len(_examples) - 1})')
 parser.add_argument('--threshold', type=float, default=0.4,
                     help='Controls viusalization of keypoints outside overlap region.')

@@ -108,8 +108,8 @@ def transform_point_cloud(point_cloud, transformation_matrix):
 #---------------------------------------------------------------------------------------------------------------------------------------
 
 _examples = [
-    # 0 use result of 12-22
-    ('../logs/CustomData/231222/ckpt/model-756864.pth',
+    # 0 use result of 01-19
+    ('../logs/CustomData/240119/ckpt/model-345600.pth',
      '/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/val_data/src',
      '/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/val_data/tar'),
      # 1 use result of 12-30
