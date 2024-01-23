@@ -17,10 +17,11 @@ class PPFEmbeddingSin(nn.Module):
         self.scale = 2 * math.pi
         self.angle_k = 128  # the number of nearest points used to compute the angle
 
-        self.embedding = SinusoidalPositionalEmbedding(d_model=d_model)
+        self.glo_embedding = SinusoidalPositionalEmbedding(d_model=d_model)
+        self.loc_embedding = SinusoidalPositionalEmbedding(d_model=d_model//4)
         self.proj_d = nn.Linear(d_model, d_model)
         self.proj_a_ij = nn.Linear(d_model, d_model)
-        self.proj_a_patch = nn.Linear(3*d_model, d_model)
+        self.proj_a_patch = nn.Linear(d_model, d_model)
         self.reduction_a = 'max'
     
     @torch.no_grad()
@@ -46,13 +47,14 @@ class PPFEmbeddingSin(nn.Module):
         """
         d_indices = []
         a_ij_indices = []
+        d_knn_indices = []
         a_n1_d_indices = []
         a_n2_d_indices = []
         a_n1_n2_indices = []
         for b in range(len(points)):
             # get the distance matrix of each node to the other nodes
             dist_map = torch.sqrt(pairwise_distance(nodes[b], nodes[b])) # (M, M)
-            d_indices.append((dist_map * self.scale).cuda()) # (M, M
+            d_indices.append((dist_map * self.scale).cuda()) # (M, M)
 
             # get the angle between the normal and other nodes
             ij_vector = nodes[b].unsqueeze(1) - nodes[b].unsqueeze(0)  # (M, M, 3)
@@ -67,6 +69,11 @@ class PPFEmbeddingSin(nn.Module):
             knn_points = index_select(points[b], node_knn_indices, dim=0) # (M, K, 3)
             
             knn_normals = index_select(points_normals[b], node_knn_indices, dim=0) # (M, K, 3)
+
+            # get the distance of nodes to the nearest k points
+            ij_vector = knn_points - nodes[b].unsqueeze(1)  # (M, K, 3)
+            dist_map = torch.sqrt(torch.sum(ij_vector ** 2, dim=-1)) # (M, K)
+            d_knn_indices.append((dist_map * self.scale).cuda()) # (M, K)
 
             # get the angle of n1-ij
             ij_vector = knn_points - nodes[b].unsqueeze(1)  # (M, K, 3)
@@ -89,10 +96,10 @@ class PPFEmbeddingSin(nn.Module):
             cos_values = torch.sum(ij_vector * normal_vector, dim=-1)
             a_n1_n2_indices.append(torch.atan2(sin_values, cos_values).cuda())  # (M, K)
 
-        return d_indices, a_ij_indices, a_n1_d_indices, a_n2_d_indices, a_n1_n2_indices
+        return d_indices, a_ij_indices, d_knn_indices, a_n1_d_indices, a_n2_d_indices, a_n1_n2_indices
 
     def forward(self, 
-                points: torch.Tensor, 
+                points, 
                 nodes: torch.Tensor, 
                 points_normals: torch.Tensor,
                 nodes_normals: torch.Tensor) -> torch.Tensor:
@@ -109,20 +116,24 @@ class PPFEmbeddingSin(nn.Module):
         """     
 
         # get the indices of PPF embedding
-        d_embeddings, a_ij_embeddings, a_n1_d_embeddings, a_n2_d_embeddings, a_n1_n2_embeddings = self.get_embedding_indices(
+        d_embeddings, a_ij_embeddings, d_knn_embeddings, a_n1_d_embeddings, a_n2_d_embeddings, a_n1_n2_embeddings = self.get_embedding_indices(
             points=points, nodes=nodes, points_normals=points_normals, nodes_normals=nodes_normals)
         
         global_embeddings = []
         local_embeddings = []
 
         for b in range(len(d_embeddings)):
-            # get the embeddings of PPF embedding
-            d_embeddings[b] = self.embedding(d_embeddings[b]) # (M, M, D)
-            a_ij_embeddings[b] = self.embedding(a_ij_embeddings[b]) # (M, M, D)
-            a_n1_d_embeddings[b] = self.embedding(a_n1_d_embeddings[b]) # (M, K, D)
-            a_n2_d_embeddings[b] = self.embedding(a_n2_d_embeddings[b]) # (M, K, D)
-            a_n1_n2_embeddings[b] = self.embedding(a_n1_n2_embeddings[b]) # (M, K, D)
-            a_patch_embeddings = torch.cat([a_n1_d_embeddings[b], a_n2_d_embeddings[b], a_n1_n2_embeddings[b]], dim=-1) # (M, K, 3*D)
+            # get the embeddings of global embedding
+            d_embeddings[b] = self.glo_embedding(d_embeddings[b]) # (M, M, D)
+            a_ij_embeddings[b] = self.glo_embedding(a_ij_embeddings[b]) # (M, M, D)
+
+            # get the embeddings of patch
+            d_knn_embeddings[b] = self.loc_embedding(d_knn_embeddings[b]) # (M, K, D/4)
+            a_n1_d_embeddings[b] = self.loc_embedding(a_n1_d_embeddings[b]) # (M, K, D/4)
+            a_n2_d_embeddings[b] = self.loc_embedding(a_n2_d_embeddings[b]) # (M, K, D/4)
+            a_n1_n2_embeddings[b] = self.loc_embedding(a_n1_n2_embeddings[b]) # (M, K, D/4)
+            a_patch_embeddings = torch.cat([d_knn_embeddings[b], a_n1_d_embeddings[b], 
+                                            a_n2_d_embeddings[b], a_n1_n2_embeddings[b]], dim=-1) # (M, K, D)
 
             # get projection embeddings of PPF embedding
             d_embeddings[b] = self.proj_d(d_embeddings[b]) # (M, M, D)
@@ -142,14 +153,6 @@ class PPFEmbeddingSin(nn.Module):
             local_embeddings.append(a_patch_embeddings)
             
         return global_embeddings, local_embeddings
-
-
-        
-
-
-        
-
-
 
 
 class SinusoidalPositionalEmbedding(nn.Module):
@@ -179,3 +182,73 @@ class SinusoidalPositionalEmbedding(nn.Module):
         embeddings = embeddings.view(*input_shape, self.d_model)  # (*, d_model)
         embeddings = embeddings.detach()
         return embeddings
+
+
+import torch.nn.functional as F
+class PositionEmbeddingCoordsSine(PPFEmbeddingSin):
+    """Similar to transformer's position encoding, but generalizes it to
+    arbitrary dimensions and continuous coordinates.
+
+    Args:
+        n_dim: Number of input dimensions, e.g. 2 for image coordinates.
+        d_model: Number of dimensions to encode into
+        temperature:
+        scale:
+    """
+    def __init__(self, d_model: int = 256, temperature=10000, scale=None):
+        super().__init__()
+
+        self.n_dim = 3
+        self.num_pos_feats = d_model // 3 // 2 * 2
+        self.temperature = temperature
+        self.padding = d_model - self.num_pos_feats * self.n_dim
+
+        if scale is None:
+            scale = 1.0
+        self.scale = scale * 2 * math.pi
+
+    def forward(self, 
+                points,
+                nodes, 
+                points_normals,
+                nodes_normals) -> torch.Tensor:
+        """
+        Args:
+            points: Point positions (*, d_in)
+
+        Returns:
+            pos_emb (*, d_out)
+        """
+    
+        # get the indices of PPF embedding
+        d_embeddings, a_ij_embeddings, d_knn_embeddings, a_n1_d_embeddings, a_n2_d_embeddings, a_n1_n2_embeddings = self.get_embedding_indices(
+            points=points, nodes=nodes, points_normals=points_normals, nodes_normals=nodes_normals)
+        
+        global_embeddings = []
+        local_embeddings = []
+
+        for b in range(len(d_embeddings)):
+            # get the embeddings of global embedding
+            d_embeddings[b] = self.glo_embedding(d_embeddings[b]) # (M, M, D)
+            a_ij_embeddings[b] = self.glo_embedding(a_ij_embeddings[b]) # (M, M, D)
+
+            # get the embeddings of position
+            dim_t = torch.arange(self.num_pos_feats, dtype=torch.float32, device=nodes[b].device)
+            dim_t = self.temperature ** (2 * torch.div(dim_t, 2, rounding_mode='trunc') / self.num_pos_feats)
+
+            nodes[b] = nodes[b] * self.scale
+            pos_divided = nodes[b].unsqueeze(-1) / dim_t
+            pos_sin = pos_divided[..., 0::2].sin()
+            pos_cos = pos_divided[..., 1::2].cos()
+            pos_emb = torch.stack([pos_sin, pos_cos], dim=-1).reshape(*nodes[b].shape[:-1], -1)
+            pos_emb = F.pad(pos_emb, (0, self.padding)) 
+            local_embeddings.append(pos_emb)
+
+            # get projection embeddings of PPF embedding
+            d_embeddings[b] = self.proj_d(d_embeddings[b]) # (M, M, D)
+            a_ij_embeddings[b] = self.proj_d(a_ij_embeddings[b]) # (M, M, D)
+            # get the final embeddings
+            global_embeddings.append(d_embeddings[b] + a_ij_embeddings[b])
+
+            
+        return global_embeddings, local_embeddings

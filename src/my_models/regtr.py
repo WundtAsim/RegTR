@@ -9,7 +9,7 @@ from my_models.backbone_kpconv.kpconv import KPFEncoder, PreprocessorGPU, comput
 from my_models.generic_reg_model import GenericRegModel
 from my_models.losses.corr_loss import CorrCriterion
 from my_models.losses.feature_loss import InfoNCELossFull, CircleLossFull
-from my_models.transformer.position_embedding import PPFEmbeddingSin
+from my_models.transformer.position_embedding import PPFEmbeddingSin, PositionEmbeddingCoordsSine
 from my_models.transformer.transformers import \
     TransformerCrossEncoderLayer, TransformerCrossEncoder
 from utils.se3_torch import compute_rigid_transform, se3_transform_list, se3_inv
@@ -37,10 +37,10 @@ class RegTR(GenericRegModel):
         #######################
         # Embeddings
         #######################
-        if cfg.get('pos_emb_type', 'sine') == 'sine':
+        if cfg.get('pos_emb_type', 'sine') == 'PPF':
             self.pos_embed = PPFEmbeddingSin(cfg.d_embed)
-        elif cfg['pos_emb_type'] == 'learned':
-            self.pos_embed = PPFEmbeddingSin(cfg.d_embed)
+        elif cfg['pos_emb_type'] == 'sine':
+            self.pos_embed = PositionEmbeddingCoordsSine(cfg.d_embed)
         else:
             raise NotImplementedError
 

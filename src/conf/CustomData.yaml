@@ -67,7 +67,7 @@ model:
     transformer_encoder_has_pos_emb: True
     sa_val_has_pos_emb: True
     ca_val_has_pos_emb: True
-    pos_emb_type: sine  # either 'sine' or 'learned'
+    pos_emb_type: sine  # either 'sine' or 'PPF'
 
     # Correspondence decoding
     corr_decoder_has_pos_emb: True
