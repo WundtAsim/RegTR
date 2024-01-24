@@ -256,6 +256,7 @@ class GeoEmbedding(PPFEmbeddingSin):
     def __init__(self, d_model: int = 256, temperature=10000):
         super().__init__()
 
+        self.n_dim = 3
         self.num_pos_feats = d_model // 3 // 2 * 2
         self.temperature = temperature
         self.padding = d_model - self.num_pos_feats * self.n_dim

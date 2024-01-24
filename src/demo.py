@@ -19,7 +19,7 @@ import matplotlib
 import cvhelpers.visualization as cvv
 import cvhelpers.colors as colors
 from cvhelpers.torch_helpers import to_numpy
-from models.regtr import RegTR
+from my_models.regtr import RegTR
 from utils.misc import load_config
 from utils.se3_numpy import se3_transform
 
