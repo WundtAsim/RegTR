@@ -26,19 +26,19 @@ from utils.se3_numpy import se3_transform
 num = 7
 _examples = [
     # 0 use custom model to test custom data
-    ('../logs/CustomData/240119/ckpt/model-345600.pth',
-     f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/src/src_91_left_{num}.pcd',
-     f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/tar/tar_91_left_{num}.pcd'),
+    ('../logs/CustomData/231230/ckpt/model-580608.pth',
+     f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/val_data/src/src_90_left_{num}.pcd',
+     f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/val_data/tar/tar_90_left_{num}.pcd'),
      # 1 use custom to test custom data--5mm-voxel
-    ('../logs/CustomData/240119/ckpt/model-345600.pth',
-     f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/src/src_96_left_{num}.pcd',
-     f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/tar/tar_96_left_{num}.pcd'),
+    ('../logs/CustomData/240119-811-right-overlap/ckpt/model-345600.pth',
+     f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/val_data/src/src_90_left_{num}.pcd',
+     f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/val_data/tar/tar_90_left_{num}.pcd'),
 ]
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--example', type=int, default=0,
                     help=f'Example pair to run (between 0 and {len(_examples) - 1})')
-parser.add_argument('--threshold', type=float, default=0.4,
+parser.add_argument('--threshold', type=float, default=0.5,
                     help='Controls viusalization of keypoints outside overlap region.')
 opt = parser.parse_args()
 

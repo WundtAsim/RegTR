@@ -4,15 +4,15 @@ general:
 dataset:
     dataset: CustomData
     root: /media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val
-    train_batch_size: 4
-    val_batch_size: 4
-    test_batch_size: 4
+    train_batch_size: 2
+    val_batch_size: 2
+    test_batch_size: 2
     noise_type: custom
     rot_mag: 45.0
     trans_mag: 0.5
 
 train_options:
-    niter: -400  # 400 epochs
+    niter: -100  # 400 epochs
 
 solver:
     optimizer: AdamW
@@ -20,7 +20,7 @@ solver:
     weight_decay: 0.0001
     grad_clip: 0.1
     scheduler: 'step'
-    scheduler_param: [34560, 0.5]  # Decay by 0.5 every 20 epochs
+    scheduler_param: [17280, 0.5]  # Decay by 0.5 every 20 epochs
 
 
 # Use a shallower backbone to maintain resolution
@@ -67,7 +67,7 @@ model:
     transformer_encoder_has_pos_emb: True
     sa_val_has_pos_emb: True
     ca_val_has_pos_emb: True
-    pos_emb_type: sine  # either 'sine' or 'PPF'
+    pos_emb_type: sine  # either 'sine' or 'PPF' or 'geo'
 
     # Correspondence decoding
     corr_decoder_has_pos_emb: True
