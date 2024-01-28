@@ -261,6 +261,7 @@ class GeoEmbedding(PPFEmbeddingSin):
         self.temperature = temperature
         self.padding = d_model - self.num_pos_feats * self.n_dim
         self.scale = 2 * math.pi
+        self.proj_d = nn.Linear(d_model, d_model)
     @torch.no_grad()
     def get_embedding_indices(self, 
                 points, 
@@ -334,11 +335,11 @@ class GeoEmbedding(PPFEmbeddingSin):
             d_embeddings[b] = self.glo_embedding(d_embeddings[b]) # (M, M, D)
             a_ij_embeddings[b] = self.glo_embedding(a_ij_embeddings[b]) # (M, M, K, D)
 
-            # get projection embeddings of PPF embedding
+            # get projection embeddings of Geo embedding
             d_embeddings[b] = self.proj_d(d_embeddings[b]) # (M, M, D)
             a_ij_embeddings[b] = self.proj_d(a_ij_embeddings[b]) # (M, M, K, D)
 
-            # get the pool embeddings of PPF embedding
+            # get the pool embeddings of Geo embedding
             if self.reduction_a == 'max':
                 a_ij_embeddings[b] = torch.max(a_ij_embeddings[b], dim=2)[0] # (M, M, D)
             elif self.reduction_a == 'mean':

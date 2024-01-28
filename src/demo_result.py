@@ -121,6 +121,10 @@ _examples = [
     ('../logs/CustomData/240126-circleLoss/ckpt/model-138240.pth',
      f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/src',
      f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/tar'),
+     # 3 240127-PPFglonal+xyzSine
+    ('../logs/CustomData/240127-PPF+xyzSine/ckpt/model-152064.pth',
+     f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/src',
+     f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/tar'),
 ]
 
 parser = argparse.ArgumentParser()

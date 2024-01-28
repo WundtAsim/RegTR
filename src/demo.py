@@ -52,6 +52,10 @@ _examples = [
     ('../logs/CustomData/240126-circleLoss/ckpt/model-138240.pth',
      f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/src/src_96_left_{opt.num}.pcd',
      f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/tar/tar_96_left_{opt.num}.pcd'),
+     # 5 240127-PPFglobal+xyzsin
+    ('../logs/CustomData/240127-PPF+xyzSine/ckpt/model-152064.pth',
+     f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/src/src_96_left_{opt.num}.pcd',
+     f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/tar/tar_96_left_{opt.num}.pcd'),
 ]
 
 
