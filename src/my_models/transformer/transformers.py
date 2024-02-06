@@ -90,13 +90,17 @@ class TransformerCrossEncoderLayer(nn.Module):
                  activation="relu", normalize_before=False,
                  sa_val_has_pos_emb=False,
                  ca_val_has_pos_emb=False,
-                 attention_type='dot_prod'
+                 attention_type='dot_prod',
+                 pos_emb_type='geo',
                  ):
         super().__init__()
 
         # Self, cross attention layers
-        if attention_type == 'dot_prod':
+        if pos_emb_type == 'geo':
             self.self_attn = RPEMultiheadAttention(d_model, nhead, dropout=dropout)
+            self.multihead_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
+        elif pos_emb_type == 'PPF':
+            self.self_attn = PPFMultiheadAttention(d_model, nhead, dropout=dropout)
             self.multihead_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
         else:
             raise NotImplementedError
@@ -331,6 +335,74 @@ class RPEMultiheadAttention(nn.Module):
             self.num_heads, self.d_model_per_head).permute(0, 3, 1, 2, 4) # b n m (h c) -> b h n m c        
 
         attention_scores_p = torch.einsum('bhnc,bhnmc->bhnm', q, g) # b h n m
+        attention_scores_e = torch.einsum('bhnc,bhmc->bhnm', q, k) # b h n m
+        attention_scores = (attention_scores_e + attention_scores_p) / self.d_model_per_head ** 0.5 # b h n m
+        if attention_factors is not None:
+            attention_scores = attention_factors.unsqueeze(1) * attention_scores # b h n m
+        if key_weights is not None:
+            attention_scores = attention_scores * key_weights.unsqueeze(1).unsqueeze(1) # b h n m
+        if key_masks is not None:
+            attention_scores = attention_scores.masked_fill(key_masks.unsqueeze(1).unsqueeze(1), float('-inf')) # b h n m
+        attention_scores = F.softmax(attention_scores, dim=-1) # b h n m
+        attention_scores = self.dropout(attention_scores)
+
+        hidden_states = torch.matmul(attention_scores, v) #bhnm * bhmc-> b h n c
+
+        hidden_states = hidden_states.transpose(1, 2).reshape(
+            hidden_states.shape[0], hidden_states.shape[2], self.num_heads * self.d_model_per_head) # b n (h c)
+        
+        hidden_states = hidden_states.transpose(0, 1) # n b (h c)
+        return hidden_states, attention_scores
+
+class PPFMultiheadAttention(nn.Module):
+    r"""Allows the model to jointly attend to information
+    Examples::
+        >>> multihead_attn = nn.MultiheadAttention(embed_dim, num_heads)
+        >>> attn_output, attn_output_weights = multihead_attn(query, key, value)
+    """
+
+    def __init__(self, d_model, num_heads, dropout=0.) -> None:
+        super(PPFMultiheadAttention, self).__init__()
+
+        if d_model % num_heads != 0:
+            raise ValueError('`d_model` ({}) must be a multiple of `num_heads` ({}).'.format(d_model, num_heads))
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.d_model_per_head = d_model // num_heads
+
+        self.proj_q = nn.Linear(self.d_model, self.d_model)
+        self.proj_k = nn.Linear(self.d_model, self.d_model)
+        self.proj_v = nn.Linear(self.d_model, self.d_model)
+        self.proj_g = nn.Linear(self.d_model, self.d_model)
+        self.dropout = nn.Identity() if dropout == 0. else nn.Dropout(dropout)
+
+    def forward(self, query, key, value, embed_g, key_weights=None, key_masks=None, attention_factors=None):
+        r"""Scaled Dot-Product Attention with Pre-computed Relative Positional Embedding (forward)
+
+        Args:
+            query: torch.Tensor (N, B, C)
+            key: torch.Tensor (M, B, C)
+            value: torch.Tensor (M, B, C)
+            embed_g: torch.Tensor (N, B, C), relative positional embedding
+            key_weights: torch.Tensor (B, M), soft masks for the keys
+            key_masks: torch.Tensor (B, M), True if ignored, False if preserved
+            attention_factors: torch.Tensor (B, N, M)
+
+        Returns:
+            hidden_states: torch.Tensor (B, N, C)
+            attention_scores: torch.Tensor (B, H, N, M)
+        """
+        # reshape q from(n,b,h*c) to (b,h,n,c)
+        q = self.proj_q(query).reshape(
+            query.shape[0], query.shape[1], self.num_heads, self.d_model_per_head).permute(1, 2, 0, 3) # n b (h c) -> b h n c
+        k = self.proj_k(key).reshape(
+            key.shape[0], key.shape[1], self.num_heads, self.d_model_per_head).permute(1, 2, 0, 3) # m b (h c) -> b h m c
+        v = self.proj_v(value).reshape(
+            value.shape[0], value.shape[1], self.num_heads, self.d_model_per_head).permute(1, 2, 0, 3) # m b (h c) -> b h m c
+        g = self.proj_g(embed_g).reshape(
+            embed_g.shape[0], embed_g.shape[1], self.num_heads, self.d_model_per_head).permute(1, 2, 0, 3) # n b (h c) -> b h n c
+
+        attention_scores_p = torch.einsum('bhnc,bhmc->bhnm', q, g) # b h n m
         attention_scores_e = torch.einsum('bhnc,bhmc->bhnm', q, k) # b h n m
         attention_scores = (attention_scores_e + attention_scores_p) / self.d_model_per_head ** 0.5 # b h n m
         if attention_factors is not None:

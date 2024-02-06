@@ -67,7 +67,7 @@ model:
     transformer_encoder_has_pos_emb: True
     sa_val_has_pos_emb: True
     ca_val_has_pos_emb: True
-    pos_emb_type: geo  # either 'sine' or 'PPF' or 'geo'
+    pos_emb_type: PPF  # either 'PPF' or 'geo'
 
     # Correspondence decoding
     corr_decoder_has_pos_emb: True
@@ -97,5 +97,5 @@ losses:
 
 validation:
     # Registration success criteria. We use this to pick the best checkpoint
-    reg_success_thresh_rot: 10
-    reg_success_thresh_trans: 0.1
+    reg_success_thresh_rot: 5
+    reg_success_thresh_trans: 0.005

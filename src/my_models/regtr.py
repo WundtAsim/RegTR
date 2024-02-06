@@ -9,7 +9,7 @@ from my_models.backbone_kpconv.kpconv import KPFEncoder, PreprocessorGPU, comput
 from my_models.generic_reg_model import GenericRegModel
 from my_models.losses.corr_loss import CorrCriterion
 from my_models.losses.feature_loss import InfoNCELossFull, CircleLossFull
-from my_models.transformer.position_embedding import PPFEmbeddingSin, PositionEmbeddingCoordsSine, GeoEmbedding
+from my_models.transformer.position_embedding import PPFEmbeddingSin, GeoEmbedding
 from my_models.transformer.transformers import \
     TransformerCrossEncoderLayer, TransformerCrossEncoder
 from utils.se3_torch import compute_rigid_transform, se3_transform_list, se3_inv
@@ -37,12 +37,11 @@ class RegTR(GenericRegModel):
         #######################
         # Embeddings
         #######################
-        if cfg.get('pos_emb_type', 'sine') == 'PPF':
+        self.pos_embed_cgf = cfg.get('pos_emb_type', 'geo')
+        if self.pos_embed_cgf == 'PPF':
             self.pos_embed = PPFEmbeddingSin(cfg.d_embed)
-        elif cfg['pos_emb_type'] == 'geo':
+        elif self.pos_embed_cgf == 'geo':
             self.pos_embed = GeoEmbedding(cfg.d_embed)
-        elif cfg['pos_emb_type'] == 'sine':
-            self.pos_embed = PositionEmbeddingCoordsSine(cfg.d_embed)
         else:
             raise NotImplementedError
 
@@ -56,6 +55,7 @@ class RegTR(GenericRegModel):
             sa_val_has_pos_emb=cfg.sa_val_has_pos_emb,
             ca_val_has_pos_emb=cfg.ca_val_has_pos_emb,
             attention_type=cfg.attention_type,
+            pos_emb_type=cfg.pos_emb_type,
         )
         encoder_norm = nn.LayerNorm(cfg.d_embed) if cfg.pre_norm else None
         self.transformer_encoder = TransformerCrossEncoder(
@@ -164,8 +164,12 @@ class RegTR(GenericRegModel):
         tgt_pe_padded, _, _ = pad_sequence(tgt_pe)
         # deal with the global embeddings, only in self attention
         src_ge, tgt_ge = global_embeddings[:B], global_embeddings[B:]
-        src_ge_padded = pad_sequence_3d(src_ge)
-        tgt_ge_padded = pad_sequence_3d(tgt_ge)
+        if self.pos_embed_cgf == 'geo':
+            src_ge_padded = pad_sequence_3d(src_ge)
+            tgt_ge_padded = pad_sequence_3d(tgt_ge)
+        elif self.pos_embed_cgf == 'PPF':
+            src_ge_padded, _, _ = pad_sequence(src_ge)
+            tgt_ge_padded, _, _ = pad_sequence(tgt_ge)
 
         # Performs padding, then apply attention (REGTR "encoder" stage) to condition on the other
         # point cloud

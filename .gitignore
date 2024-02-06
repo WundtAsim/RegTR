@@ -294,3 +294,4 @@ data/
 logs/
 logdev/
 trained_models/
+my_results/

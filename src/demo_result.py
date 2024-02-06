@@ -21,12 +21,16 @@ def load_point_cloud(fname, tran, transformation):
         data = torch.load(fname)
     elif fname.endswith('.ply') or fname.endswith('.pcd'):
         pcd = o3d.io.read_point_cloud(fname)
-        if tran:
-            pcd = pcd.transform(transformation)
-        data = np.asarray(pcd.points)
+        data = np.asarray(pcd.points).astype(np.float32)
         normals = np.asarray(pcd.normals).astype(np.float32)
-    elif fname.endswith('.bin'):
-        data = np.fromfile(fname, dtype=np.float32).reshape(-1, 4)
+        # index = np.arange(data.shape[0])
+        # np.random.shuffle(index)
+        # data = data[index]
+        # normals = normals[index]
+        if tran:
+            rot, trans = transformation[:3, :3], transformation[:3, 3:4]
+            data = np.einsum('...ij,...bj->...bi', rot, data) + trans.transpose(-1, -2)  # Rx + t
+            normals = np.einsum('...ij,...bj->...bi', rot, normals, dtype=np.float32)
     else:
         raise AssertionError('Cannot recognize point cloud format')
     return data[:, :3], normals  # ignore reflectance, or other features if any
@@ -46,37 +50,28 @@ def generate_transform():
     sinz = np.sin(anglez)
     Rx = np.array([[1, 0, 0],
                     [0, cosx, -sinx],
-                    [0, sinx, cosx]])
+                    [0, sinx, cosx]], dtype=np.float32)
     Ry = np.array([[cosy, 0, siny],
                     [0, 1, 0],
-                    [-siny, 0, cosy]])
+                    [-siny, 0, cosy]], dtype=np.float32)
     Rz = np.array([[cosz, -sinz, 0],
                     [sinz, cosz, 0],
-                    [0, 0, 1]])
+                    [0, 0, 1]], dtype=np.float32)
     R_ab = Rx @ Ry @ Rz
-    t_ab = np.random.uniform(-trans_mag, trans_mag, 3)
-    rand_SE3 = np.concatenate((R_ab, t_ab[:, None]), axis=1).astype(np.float32)
-    rand_SE3 = np.vstack((rand_SE3,np.array([0,0,0,1])))
+    t_ab = np.random.uniform(-trans_mag, trans_mag, 3).astype(np.float32)
+    rand_SE3 = np.concatenate((R_ab, t_ab[:, None]), axis=1)
+    rand_SE3 = np.vstack((rand_SE3,np.array([0,0,0,1]))).astype(np.float32)
     # print("随机矩阵\n", np.linalg.inv(rand_SE3))
     return rand_SE3
 
 def compute_relative_errors(T_true, T_est):
-    # 提取真实旋转矩阵和估计的旋转矩阵
-    R_true = T_true[:3, :3]
-    R_est = T_est[:3, :3]
+    T = T_true @ np.linalg.inv(T_est)
+    # rotation error
+    trace = T[0,0] + T[1,1] + T[2,2]
+    rotation_error = np.arccos(np.clip(0.5 * (trace - 1), -1., 1.)) * 180/np.pi
 
-    # 计算相对旋转误差
-    trace = np.trace(np.dot(R_true.T, R_est))
-    trace = np.clip(trace, -1.0, 3.0)
-    # print("trace: ",trace)
-    rotation_error = abs(np.arccos((trace - 1.0) / 2.0) * 180/np.pi)
-
-    # 提取真实平移向量和估计的平移向量
-    t_true = T_true[:3, 3]
-    t_est = T_est[:3, 3]
-
-    # 计算相对平移误差
-    translation_error = np.linalg.norm(t_true - t_est)
+    # translation error
+    translation_error = np.linalg.norm(T[:3, 3])
 
     return rotation_error, translation_error
 
@@ -125,10 +120,14 @@ _examples = [
     ('../logs/CustomData/240127-PPF+xyzSine/ckpt/model-152064.pth',
      f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/src',
      f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/tar'),
+     # 4 240128-geo+xyzSine
+    ('../logs/CustomData/240128-geo-xyz/ckpt/model-145152.pth',
+     f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/src',
+     f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/tar'),
 ]
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--example', type=int, default=0,
+parser.add_argument('--example', type=int, default=4,
                     help=f'Example pair to run (between 0 and {len(_examples) - 1})')
 opt = parser.parse_args()
 
@@ -167,12 +166,12 @@ def main():
 
         # Feeds the data into the model
         data_batch = {
-            'src_xyz': [torch.from_numpy(src_xyz).float().to(device)],
-            'tgt_xyz': [torch.from_numpy(tgt_xyz).float().to(device)],
-            'src_normals': [torch.from_numpy(src_normals).float().to(device)],
-            'tgt_normals': [torch.from_numpy(tgt_normals).float().to(device)],
+            'src_xyz': [torch.from_numpy(src_xyz).to(device)],
+            'tgt_xyz': [torch.from_numpy(tgt_xyz).to(device)],
+            'src_normals': [torch.from_numpy(src_normals).to(device)],
+            'tgt_normals': [torch.from_numpy(tgt_normals).to(device)],
         }
-        outputs = model(data_batch)
+        outputs = model.forward(data_batch)
 
         # Visualize the results
         b = 0
@@ -196,9 +195,9 @@ def main():
     print("TRE:",np.mean(TRE))
     print("CD:",np.mean(CD))
 
-    np.savetxt("../my_results/RRE.txt", RRE)
-    np.savetxt("../my_results/TRE.txt", TRE)
-    np.savetxt("../my_results/CD.txt", CD)
+    # np.savetxt("../my_results/RRE.txt", RRE, fmt='%.3f')
+    # np.savetxt("../my_results/TRE.txt", TRE, fmt='%.3f')
+    # np.savetxt("../my_results/CD.txt", CD, fmt='%.3f')
 
 
 if __name__ == '__main__':

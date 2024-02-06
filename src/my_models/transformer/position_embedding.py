@@ -2,6 +2,7 @@ import math
 import torch
 import torch.nn as nn
 import numpy as np
+import torch.nn.functional as F
 from utils.pcd_partition import point_to_node_partition, index_select, pairwise_distance
 
 class PPFEmbeddingSin(nn.Module):
@@ -14,11 +15,11 @@ class PPFEmbeddingSin(nn.Module):
                  d_model: int = 256):
         super().__init__()
         self.d_model = d_model
-        self.scale = 2 * math.pi
+        self.scale = 1 # 2 * math.pi
         self.angle_k = 50  # the number of nearest points used to compute the angle
 
-        self.glo_embedding = SinusoidalPositionalEmbedding(d_model=d_model)
-        self.glo_proj = nn.Linear(4*d_model, d_model)
+        # self.glo_embedding = SinusoidalPositionalEmbedding(d_model=d_model)
+        self.glo_proj = nn.Linear(4, d_model)
         self.reduction_a = 'max'
 
         self.n_dim = 3
@@ -40,64 +41,59 @@ class PPFEmbeddingSin(nn.Module):
             points_normals: List(B) of (N, 3)
             nodes_normals: List(B) of (M, 3)
         Returns:
-            d_indices: (M, M)
-            a_ij_indices: (M, M)
-            a_n1_d_indices: (M, M)
-            a_n2_d_indices: (M, M)
-            a_n1_n2_indices: (M, M)
+            d_indices: List(B) of (M, K)
+            a_n1_d_indices: List(B) of (M, K)
+            a_n2_d_indices: List(B) of (M, K)
+            a_n1_n2_indices: List(B) of (M, K)
         """
         d_indices = []
         a_n1_d_indices = []
         a_n2_d_indices = []
         a_n1_n2_indices = []
         for b in range(len(points)):
-            # get the distance matrix of each node to the other nodes
-            dist_map = torch.sqrt(pairwise_distance(nodes[b], nodes[b])) # (M, M)
-            d_indices.append((dist_map * self.scale).cuda()) # (M, M)
+
+            # get point to node partition: patch
+            _, node_masks, node_knn_indices = point_to_node_partition(
+                points=points[b], nodes=nodes[b], point_limit=self.angle_k) # node_knn_indices: (M, K)
+            knn_points = index_select(points[b], node_knn_indices, dim=0) # (M, K, 3)
+            knn_normals = index_select(points_normals[b], node_knn_indices, dim=0) # (M, K, 3)
+            
+            # get the distance matrix of each node to the knn points
+            dist_map = torch.norm(knn_points - nodes[b].unsqueeze(1), dim=-1) # (M, K)
+            d_indices.append((dist_map * self.scale).cuda()) # (M, K)
 
             # get the angle between the i normal and ij vector
-            ij_vector = nodes[b].unsqueeze(1) - nodes[b].unsqueeze(0)  # (M, M, 3)
-            normal_vector = nodes_normals[b].unsqueeze(1).expand(-1, nodes[b].shape[-2], -1) # (M, M, 3)
-            sin_values = torch.linalg.norm(torch.cross(ij_vector, normal_vector, dim=-1), dim=-1)  # (M, M)
-            cos_values = torch.sum(ij_vector * normal_vector, dim=-1)  # (M, M)
-            angles = torch.atan2(sin_values, cos_values) # (M, M)
-            dot_product = torch.sum(ij_vector * normal_vector, dim=-1) # (M, M)
-            mask = dot_product < 0 
-            angles[mask] = -angles[mask] # (M, M)
+            ij_vector = knn_points - nodes[b].unsqueeze(1)  # (M, K, 3)
+            normal_vector = nodes_normals[b].unsqueeze(1).expand(-1, knn_points.shape[-2], -1) # (M, K, 3)
+            sin_values = torch.linalg.norm(torch.cross(ij_vector, normal_vector, dim=-1), dim=-1)  # (M, K)
+            cos_values = torch.sum(ij_vector * normal_vector, dim=-1)  # (M, K)
+            angles = torch.atan2(sin_values, cos_values) # (M, K)
+            dot_product = torch.sum(ij_vector * normal_vector, dim=-1) # (M, K) # make sure the angle is in the range of [0, pi]
+            mask = dot_product < 0
+            angles[mask] = -angles[mask] # (M, K)
             a_n1_d_indices.append(angles.cuda())
 
             # get the angle between the j normal and ij vector
-            ij_vector = nodes[b].unsqueeze(0) - nodes[b].unsqueeze(1)  # (M, M, 3)
-            normal_vector = nodes_normals[b].unsqueeze(0).expand(nodes[b].shape[-2], -1, -1) # (M, M, 3)
-            sin_values = torch.linalg.norm(torch.cross(ij_vector, normal_vector, dim=-1), dim=-1)  # (M, M)
-            cos_values = torch.sum(ij_vector * normal_vector, dim=-1)  # (M, M)
-            angles = torch.atan2(sin_values, cos_values) # (M, M)
-            dot_product = torch.sum(ij_vector * normal_vector, dim=-1) # (M, M)
-            mask = dot_product < 0 
-            angles[mask] = -angles[mask] # (M, M)
+            ij_vector = nodes[b].unsqueeze(1) - knn_points  # (M, K, 3)
+            normal_vector = knn_normals # (M, K, 3)
+            sin_values = torch.linalg.norm(torch.cross(ij_vector, normal_vector, dim=-1), dim=-1)  # (M, K)
+            cos_values = torch.sum(ij_vector * normal_vector, dim=-1)  # (M, K)
+            angles = torch.atan2(sin_values, cos_values) # (M, K)
+            dot_product = torch.sum(ij_vector * normal_vector, dim=-1) # (M, K)
+            mask = dot_product < 0
+            angles[mask] = -angles[mask] # (M, K)
             a_n2_d_indices.append(angles.cuda())
 
             # get the angle between i normal and j normal
-            i_normal = nodes_normals[b].unsqueeze(1).expand(-1, nodes[b].shape[-2], -1) # (M, M, 3)
-            j_normal = nodes_normals[b].unsqueeze(0).expand(nodes[b].shape[-2], -1, -1) # (M, M, 3)
-            sin_values = torch.linalg.norm(torch.cross(i_normal,j_normal, dim=-1), dim=-1)  # (M, M)
-            cos_values = torch.sum(nodes_normals[b].unsqueeze(1) * nodes_normals[b].unsqueeze(0), dim=-1)  # (M, M)
-            angles = torch.atan2(sin_values, cos_values) # (M, M)
-            dot_product = torch.sum(nodes_normals[b].unsqueeze(1) * nodes_normals[b].unsqueeze(0), dim=-1) # (M, M)
+            i_normal = nodes_normals[b].unsqueeze(1).expand(-1, knn_points.shape[-2], -1) # (M, K, 3)
+            j_normal = knn_normals # (M, K, 3)
+            sin_values = torch.linalg.norm(torch.cross(i_normal,j_normal, dim=-1), dim=-1)  # (M, K)
+            cos_values = torch.sum(nodes_normals[b].unsqueeze(1) * knn_normals, dim=-1)  # (M, K)
+            angles = torch.atan2(sin_values, cos_values) # (M, K)
+            dot_product = torch.sum(nodes_normals[b].unsqueeze(1) * knn_normals, dim=-1) # (M, K)
             mask = dot_product < 0
-            angles[mask] = -angles[mask] # (M, M)
+            angles[mask] = -angles[mask] # (M, K)
             a_n1_n2_indices.append(angles.cuda())
-
-            
-
-
-            # get point to node partition: patch
-            # _, node_masks, node_knn_indices = point_to_node_partition(
-            #     points=points[b], nodes=nodes[b], point_limit=self.angle_k) # node_knn_indices: (M, K)
-            # knn_points = index_select(points[b], node_knn_indices, dim=0) # (M, K, 3)
-            
-            # knn_normals = index_select(points_normals[b], node_knn_indices, dim=0) # (M, K, 3)
-
 
         return d_indices, a_n1_d_indices, a_n2_d_indices, a_n1_n2_indices
 
@@ -113,7 +109,7 @@ class PPFEmbeddingSin(nn.Module):
             points_normals: List(B) of (N, 3)
             nodes_normals: List(B) of (M, 3)
         Returns:
-            global_embeddings: List(B) of (M, M, D)
+            global_embeddings: List(B) of (M, D)
             local_embeddings: List(B) of (M, D)
             
         """     
@@ -127,16 +123,17 @@ class PPFEmbeddingSin(nn.Module):
 
         for b in range(len(d_embeddings)):
             # get the embeddings of global embedding
-            d_embeddings[b] = self.glo_embedding(d_embeddings[b]) # (M, M, D)
-
-            a_n1_d_embeddings[b] = self.glo_embedding(a_n1_d_embeddings[b]) # (M, M, D)
-            a_n2_d_embeddings[b] = self.glo_embedding(a_n2_d_embeddings[b]) # (M, M, D)
-            a_n1_n2_embeddings[b] = self.glo_embedding(a_n1_n2_embeddings[b]) # (M, M, D)
-            global_embedding = torch.cat([d_embeddings[b], a_n1_d_embeddings[b], 
-                                            a_n2_d_embeddings[b], a_n1_n2_embeddings[b]], dim=-1) # (M, M, 4D)
-
+            global_embedding = torch.stack([d_embeddings[b], a_n1_d_embeddings[b], 
+                                            a_n2_d_embeddings[b], a_n1_n2_embeddings[b]], dim=-1) # (M, K, 4)
             # get projection embeddings of PPF embedding
-            global_embedding = self.glo_proj(global_embedding) # (M, M, D)
+            global_embedding = self.glo_proj(global_embedding) # (M, K, D)
+            # get the pool embeddings of Geo embedding
+            if self.reduction_a == 'max':
+                global_embedding = torch.max(global_embedding, dim=-2)[0] # (M, D)
+            elif self.reduction_a == 'mean':
+                global_embedding = torch.mean(global_embedding, dim=-2)[0] # (M, D)
+            else:
+                raise ValueError(f'Unsupported reduction_a: {self.reduction_a}')
             
             # get the global final embeddings
             global_embeddings.append(global_embedding)
@@ -182,79 +179,16 @@ class SinusoidalPositionalEmbedding(nn.Module):
         embeddings = embeddings.view(*input_shape, self.d_model)  # (*, d_model)
         embeddings = embeddings.detach()
         return embeddings
-
-
-import torch.nn.functional as F
-class PositionEmbeddingCoordsSine(PPFEmbeddingSin):
-    """Similar to transformer's position encoding, but generalizes it to
-    arbitrary dimensions and continuous coordinates.
-
-    Args:
-        n_dim: Number of input dimensions, e.g. 2 for image coordinates.
-        d_model: Number of dimensions to encode into
-        temperature:
-        scale:
-    """
-    def __init__(self, d_model: int = 256, temperature=10000):
-        super().__init__()
-
-        self.n_dim = 3
-        self.num_pos_feats = d_model // 3 // 2 * 2
-        self.temperature = temperature
-        self.padding = d_model - self.num_pos_feats * self.n_dim
-        self.scale = 2 * math.pi
-
-    def forward(self, 
-                points,
-                nodes, 
-                points_normals,
-                nodes_normals) -> torch.Tensor:
-        """
-        Args:
-            points: Point positions (*, d_in)
-
-        Returns:
-            pos_emb (*, d_out)
-        """
     
-        # get the indices of PPF embedding
-        d_embeddings, a_ij_embeddings, d_knn_embeddings, a_n1_d_embeddings, a_n2_d_embeddings, a_n1_n2_embeddings = self.get_embedding_indices(
-            points=points, nodes=nodes, points_normals=points_normals, nodes_normals=nodes_normals)
-        
-        global_embeddings = []
-        local_embeddings = []
-
-        for b in range(len(d_embeddings)):
-            # get the embeddings of global embedding
-            d_embeddings[b] = self.glo_embedding(d_embeddings[b]) # (M, M, D)
-            a_ij_embeddings[b] = self.glo_embedding(a_ij_embeddings[b]) # (M, M, D)
-
-            # get the embeddings of position
-            dim_t = torch.arange(self.num_pos_feats, dtype=torch.float32, device=nodes[b].device)
-            dim_t = self.temperature ** (2 * torch.div(dim_t, 2, rounding_mode='trunc') / self.num_pos_feats)
-
-            nodes[b] = nodes[b] * self.scale
-            pos_divided = nodes[b].unsqueeze(-1) / dim_t
-            pos_sin = pos_divided[..., 0::2].sin()
-            pos_cos = pos_divided[..., 1::2].cos()
-            pos_emb = torch.stack([pos_sin, pos_cos], dim=-1).reshape(*nodes[b].shape[:-1], -1)
-            pos_emb = F.pad(pos_emb, (0, self.padding)) 
-            local_embeddings.append(pos_emb)
-
-            # get projection embeddings of PPF embedding
-            d_embeddings[b] = self.proj_d(d_embeddings[b]) # (M, M, D)
-            a_ij_embeddings[b] = self.proj_d(a_ij_embeddings[b]) # (M, M, D)
-            # get the final embeddings
-            global_embeddings.append(d_embeddings[b] + a_ij_embeddings[b])
-
-            
-        return global_embeddings, local_embeddings
-    
-class GeoEmbedding(PPFEmbeddingSin):
+class GeoEmbedding(nn.Module):
     """
     """
     def __init__(self, d_model: int = 256, temperature=10000):
         super().__init__()
+        self.d_model = d_model
+        self.angle_k = 50  # the number of nearest points used to compute the angle
+        self.glo_embedding = SinusoidalPositionalEmbedding(d_model=d_model)
+        self.reduction_a = 'max'
 
         self.n_dim = 3
         self.num_pos_feats = d_model // 3 // 2 * 2

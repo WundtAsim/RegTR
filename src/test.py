@@ -20,13 +20,14 @@ parser.add_argument('--logdir', type=str, default='../logs',
                     help='Directory to store logs, summaries, checkpoints.')
 parser.add_argument('--dev', action='store_true',
                     help='If true, will ignore logdir and log to ../logdev instead')
-parser.add_argument('--name', type=str,
+parser.add_argument('--name', type=str, default='test',
                     help='Prefix to add to logging directory')
 # Misc
-parser.add_argument('--num_workers', type=int, default=0,
+parser.add_argument('--num_workers', type=int, default=4,
                     help='Number of worker threads for dataloader')
 # Training and model options
-parser.add_argument('--resume', type=str, help='Checkpoint to resume from')
+parser.add_argument('--resume', type=str, default='../logs/CustomData/240128-geo-xyz/ckpt/model-145152.pth',
+                    help='Checkpoint to resume from')
 
 
 opt = parser.parse_args()
