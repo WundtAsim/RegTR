@@ -18,8 +18,8 @@ class PPFEmbeddingSin(nn.Module):
         self.scale = 1 # 2 * math.pi
         self.angle_k = 50  # the number of nearest points used to compute the angle
 
-        # self.glo_embedding = SinusoidalPositionalEmbedding(d_model=d_model)
-        self.glo_proj = nn.Linear(4, d_model)
+        self.glo_embedding = SinusoidalPositionalEmbedding(d_model=d_model//4)
+        self.glo_proj = nn.Linear(d_model, d_model)
         self.reduction_a = 'max'
 
         self.n_dim = 3
@@ -123,8 +123,12 @@ class PPFEmbeddingSin(nn.Module):
 
         for b in range(len(d_embeddings)):
             # get the embeddings of global embedding
-            global_embedding = torch.stack([d_embeddings[b], a_n1_d_embeddings[b], 
-                                            a_n2_d_embeddings[b], a_n1_n2_embeddings[b]], dim=-1) # (M, K, 4)
+            d_embeddings[b] = self.glo_embedding(d_embeddings[b]) # (M, K, D/4)
+            a_n1_d_embeddings[b] = self.glo_embedding(a_n1_d_embeddings[b]) # (M, K, D/4)
+            a_n2_d_embeddings[b] = self.glo_embedding(a_n2_d_embeddings[b]) # (M, K, D/4)
+            a_n1_n2_embeddings[b] = self.glo_embedding(a_n1_n2_embeddings[b]) # (M, K, D/4)
+            global_embedding = torch.cat([d_embeddings[b], a_n1_d_embeddings[b], 
+                                            a_n2_d_embeddings[b], a_n1_n2_embeddings[b]], dim=-1) # (M, K, D)
             # get projection embeddings of PPF embedding
             global_embedding = self.glo_proj(global_embedding) # (M, K, D)
             # get the pool embeddings of Geo embedding

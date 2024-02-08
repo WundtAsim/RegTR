@@ -62,7 +62,7 @@ def get_transforms(noise_type: str,
 
         test_transforms = [Transforms.ReadPcd(),
                            Transforms.Shuffle(),
-                            Transforms.RandomTransform(rot_mag=rot_mag, trans_mag=trans_mag),
+                            Transforms.RandomTransform(rot_mag=rot_mag, trans_mag=trans_mag, seed=True),
                             Transforms.RandomJitter(),
                             Transforms.Coorespondence_getter()]
     else:

@@ -103,27 +103,21 @@ def transform_point_cloud(point_cloud, transformation_matrix):
 #---------------------------------------------------------------------------------------------------------------------------------------
 
 _examples = [
-    
-     # 0 use result of 01-23:glo+xyzsin
-    ('../logs/CustomData/240123-glo+xyzsin/ckpt/model-169344.pth',
-     '/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/src',
-     '/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/tar'),
-     # 1 240124-geo+xyzsin
-    ('../logs/CustomData/240124-geo+xyzSine/ckpt/model-117504.pth',
-     f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/src',
-     f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/tar'),
-     # 2 240126-same-circleLoss
-    ('../logs/CustomData/240126-circleLoss/ckpt/model-138240.pth',
-     f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/src',
-     f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/tar'),
-     # 3 240127-PPFglonal+xyzSine
-    ('../logs/CustomData/240127-PPF+xyzSine/ckpt/model-152064.pth',
-     f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/src',
-     f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/tar'),
-     # 4 240128-geo+xyzSine
+    # 0 240128-geo+xyzSine
     ('../logs/CustomData/240128-geo-xyz/ckpt/model-145152.pth',
      f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/src',
      f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/tar'),
+   
+    # 1 240127-PPFglobal+xyzSine
+    ('../logs/CustomData/240127-PPF+xyzSine/ckpt/model-152064.pth',
+     f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/src',
+     f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/tar'),
+
+    # 2 240205-geo-4
+    ('../logs/CustomData/240205-geo-4/ckpt/model-91584.pth',
+     f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/src',
+     f'/media/yangqi/Windows-SSD/Users/Lenovo/Git/dataset/CustomData/train_val/test_data/tar'),
+     
 ]
 
 parser = argparse.ArgumentParser()
@@ -194,6 +188,12 @@ def main():
     print("RRE:",np.mean(RRE))
     print("TRE:",np.mean(TRE))
     print("CD:",np.mean(CD))
+    
+    # calculate the Registration success rate
+    RRE = np.array(RRE)
+    TRE = np.array(TRE)
+    success = (RRE < 5) & (TRE < 0.005)
+    print("RR:", np.mean(success))
 
     # np.savetxt("../my_results/RRE.txt", RRE, fmt='%.3f')
     # np.savetxt("../my_results/TRE.txt", TRE, fmt='%.3f')

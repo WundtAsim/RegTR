@@ -26,26 +26,27 @@ class RandomTransformSE3_euler:
     generate uniform rotations
 
     """
-    def __init__(self, rot_mag: float = 180.0, trans_mag: float = 1.0, random_mag: bool = False):
+    def __init__(self, 
+                 rot_mag: float = 180.0, 
+                 trans_mag: float = 1.0, 
+                 seed: bool = False):
         """Applies a random rigid transformation to the source point cloud
 
         Args:
             rot_mag (float): Maximum rotation in degrees
             trans_mag (float): Maximum translation T. Random translation will
               be in the range [-X,X] in each axis
-            random_mag (bool): If true, will randomize the maximum rotation, i.e. will bias towards small
-                               perturbations
+            seed (bool): If true, will seed the random number generator
         """
         self._rot_mag = rot_mag
         self._trans_mag = trans_mag
-        self._random_mag = random_mag
+        self._seed = seed
     def generate_transform(self):
 
-        if self._random_mag:
-            attentuation = np.random.random()
-            rot_mag, trans_mag = attentuation * self._rot_mag, attentuation * self._trans_mag
-        else:
-            rot_mag, trans_mag = self._rot_mag, self._trans_mag
+        if self._seed:
+            np.random.seed(776)
+
+        rot_mag, trans_mag = self._rot_mag, self._trans_mag
 
         # Generate rotation
         anglex = np.random.uniform() * np.pi * rot_mag / 180.0
