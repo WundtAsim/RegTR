@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 
-from utils.se3_torch import se3_transform_list
+from utils.se3_torch import se3_transform_list, se3_transform
+from utils.pcd_partition import point_to_node_partition, index_select
 
 _EPS = 1e-6
 
@@ -15,13 +16,27 @@ class CorrCriterion(nn.Module):
 
         self.metric = metric
 
-    def forward(self, kp_before, kp_warped_pred, pose_gt, overlap_weights=None):
+    def forward(self, pts_before, kp_before, kp_warped_pred, pose_gt, overlap_weights=None):
 
         losses = {}
         B = pose_gt.shape[0]
 
-        kp_warped_gt = se3_transform_list(pose_gt, kp_before)
-        corr_err = torch.cat(kp_warped_pred, dim=0) - torch.cat(kp_warped_gt, dim=0)
+        ## original implementation
+        # kp_warped_gt = se3_transform_list(pose_gt, kp_before)
+        # corr_err = torch.cat(kp_warped_pred, dim=0) - torch.cat(kp_warped_gt, dim=0)
+
+        corr_err = []
+        # get point to node partition: patch
+        for b in range(B):
+            _, node_masks, node_knn_indices = point_to_node_partition(
+                points=pts_before[b], nodes=kp_before[b], point_limit=50) # node_knn_indices: (M, K)
+            pts = se3_transform(pose_gt[b], pts_before[b]) # (N, 3)
+            knn_points = index_select(pts, node_knn_indices, dim=0) # (M, K, 3)
+            # knn_normals = index_select(points_normals[b], node_knn_indices, dim=0) # (M, K, 3)
+            err = knn_points - kp_warped_pred[b].unsqueeze(1) # (M, K, 3)
+            corr_err.append(err.mean(dim=-2)) # (M, 3)
+
+        corr_err = torch.cat(corr_err, dim=0) # (M, 3)
 
         if self.metric == 'mae':
             corr_err = torch.sum(torch.abs(corr_err), dim=-1)

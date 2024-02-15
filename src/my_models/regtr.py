@@ -290,12 +290,14 @@ class RegTR(GenericRegModel):
         # Loss on the 6D correspondences
         for i in self.cfg.corr_loss_on:
             src_corr_loss = self.corr_criterion(
+                batch['src_xyz'],
                 pred['src_kp'],
                 [w[i] for w in pred['src_kp_warped']],
                 batch['pose'],
                 overlap_weights=src_overlap_p
             )
             tgt_corr_loss = self.corr_criterion(
+                batch['tgt_xyz'],
                 pred['tgt_kp'],
                 [w[i] for w in pred['tgt_kp_warped']],
                 torch.stack([se3_inv(p) for p in batch['pose']]),
